@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BikeMi Pokédex — test</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,'Segoe UI',Arial,sans-serif;background:#13131f;color:#e4e4ee;display:flex;gap:18px;padding:18px;align-items:flex-start}
+#rep{flex:1;min-width:0}
+h1{font-size:19px;margin:0 0 4px;color:#ffcb05}
+#sum{font-size:14px;margin:0 0 14px;color:#9a9ab4}
+#sum b.ok{color:#4ade80}#sum b.ko{color:#f87171}
+button{background:#ffcb05;color:#2a2100;border:none;border-radius:14px;padding:7px 16px;font-weight:700;cursor:pointer;margin-bottom:14px}
+h2{font-size:12px;text-transform:uppercase;letter-spacing:.8px;color:#9a9ab4;margin:18px 0 6px}
+.t{display:flex;gap:10px;padding:7px 10px;border-radius:7px;background:#1e1e2e;margin-bottom:4px;font-size:13px;align-items:baseline}
+.t .e{width:18px;flex-shrink:0;font-weight:700}
+.t.ok .e{color:#4ade80}.t.ko{background:#2d1515}.t.ko .e{color:#f87171}.t.run .e{color:#ffcb05}
+.t .n{flex:1}.t .d{color:#f87171;font-size:12px;margin-top:3px}
+.t .ms{color:#55556e;font-size:11px;white-space:nowrap}
+#frame{width:375px;height:667px;border:6px solid #222;border-radius:24px;background:#13131f;flex-shrink:0;position:sticky;top:18px}
+#stop{padding:40px;font-size:15px;line-height:1.6;max-width:560px}
+</style>
+</head>
+<body>
+<div id="rep">
+  <h1>BikeMi Pokédex — test automatici</h1>
+  <p id="sum">In preparazione…</p>
+  <button id="again" onclick="location.reload()">Esegui di nuovo</button>
+  <div id="out"></div>
+</div>
+<iframe id="frame" title="App sotto test"></iframe>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// I test usano stazioni e corse inventate: nessun dato personale. Girano solo in
+// locale perché svuotano i dati salvati dell'app su questo indirizzo; quelli
+// presenti all'avvio vengono rimessi a posto alla fine.
+// ─────────────────────────────────────────────────────────────────────────────
+if(!['localhost','127.0.0.1','[::1]'].includes(location.hostname)){
+  document.body.innerHTML='<div id="stop">I test si aprono solo da un server locale, per esempio con<br><code>python -m http.server</code> nella cartella del progetto.<br><br>Sul sito pubblicato cancellerebbero i dati salvati dell\'app.</div>';
+  throw new Error('test fuori da localhost');
+}
+
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const frame=document.getElementById('frame');
+const IOS='Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1';
+const AND='Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/130.0 Mobile Safari/537.36';
+
+// 30 stazioni a spirale attorno al Duomo, ognuna mezzo chilometro più lontana della
+// precedente: le 21 più lontane (S10–S30) prendono i leggendari, S01–S09 sono normali.
+const C=[45.4642,9.19];
+const ST=Array.from({length:30},(_,i)=>{
+  const k=i+1, r=0.5*k, a=k*47*Math.PI/180;
+  return {station_id:'S'+String(k).padStart(2,'0'), name:k+' - Via Prova '+k, address:'Via Prova '+k,
+    lat:+(C[0]+r*Math.cos(a)/111.32).toFixed(6), lon:+(C[1]+r*Math.sin(a)/(111.32*Math.cos(C[0]*Math.PI/180))).toFixed(6)};
+});
+const S=id=>ST.find(s=>s.station_id===id);
+const giorno=off=>{ const d=new Date(); d.setDate(d.getDate()+off); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
+let nTrip=0;
+function corsa(a,b,g=giorno(-2),min=20){
+  const s=S(a)||{station_id:a,name:a,address:'',lat:45.6,lon:9.0}, e=S(b)||{station_id:b,name:b,address:'',lat:45.61,lon:9.01};
+  return {_id:'T'+(++nTrip),_tripStarted:g+'T10:00:00.000Z',_tripEnded:g+'T10:'+String(min).padStart(2,'0')+':00.000Z',_tripDuration:min*60,
+    _startStation:{_id:s.station_id,_title:s.name,_subtitle:s.address,_coords:{_latitude:s.lat,_longitude:s.lon}},
+    _endStation:{_id:e.station_id,_title:e.name,_subtitle:e.address,_coords:{_latitude:e.lat,_longitude:e.lon}}};
+}
+// Export di partenza: catturate S01–S06.
+const BASE=()=>[corsa('S01','S02'),corsa('S03','S04'),corsa('S05','S06'),corsa('S02','S01')];
+
+// ── zip scritto a mano, per provare il caricamento dello zip senza file veri ──
+async function zip(files,data){
+  // data 'AAAA-MM-GG' scritta nello zip come fa BikeMi; senza, campo vuoto
+  let dos=0; if(data){ const [a,m,g]=data.split('-').map(Number); dos=((a-1980)<<9)|(m<<5)|g; }
+  const enc=new TextEncoder(), parts=[], cd=[]; let off=0;
+  for(const f of files){
+    const raw=enc.encode(f.text), nome=enc.encode(f.name);
+    const dati=f.deflate ? new Uint8Array(await new Response(new Blob([raw]).stream().pipeThrough(new CompressionStream('deflate-raw'))).arrayBuffer()) : raw;
+    const h=new DataView(new ArrayBuffer(30));
+    h.setUint32(0,0x04034b50,true); h.setUint16(4,20,true); h.setUint16(8,f.deflate?8:0,true); h.setUint16(12,dos,true);
+    h.setUint32(18,dati.length,true); h.setUint32(22,raw.length,true); h.setUint16(26,nome.length,true);
+    const c=new DataView(new ArrayBuffer(46));
+    c.setUint32(0,0x02014b50,true); c.setUint16(4,20,true); c.setUint16(6,20,true); c.setUint16(10,f.deflate?8:0,true); c.setUint16(14,dos,true);
+    c.setUint32(20,dati.length,true); c.setUint32(24,raw.length,true); c.setUint16(28,nome.length,true); c.setUint32(42,off,true);
+    parts.push(new Uint8Array(h.buffer),nome,dati); cd.push(new Uint8Array(c.buffer),nome);
+    off+=30+nome.length+dati.length;
+  }
+  const cdLen=cd.reduce((a,b)=>a+b.length,0), e=new DataView(new ArrayBuffer(22));
+  e.setUint32(0,0x06054b50,true); e.setUint16(8,files.length,true); e.setUint16(10,files.length,true);
+  e.setUint32(12,cdLen,true); e.setUint32(16,off,true);
+  return new Blob([...parts,...cd,new Uint8Array(e.buffer)]);
+}
+
+// ── l'app gira in un iframe, con rete, GPS, permessi e telefono simulati ──
+const T={};
+window.__T=T;
+const STUB=`<script>(function(){
+  const T=parent.__T, real=window.fetch.bind(window);
+  window.fetch=async(u,o)=>{ u=String(u); T.calls.push(u);
+    if(u.includes('urbansharing')){ if(T.gbfs==='giu') throw new TypeError('offline');
+      return new Response(JSON.stringify({data:{stations:T.gbfs}}),{status:200}); }
+    if(u.includes('valhalla')){ if(T.valhalla==='giu') throw new TypeError('offline');
+      return new Response(JSON.stringify({trip:{summary:{length:9.5,time:1800}}}),{status:200}); }
+    return real(u,o); };
+  const g=navigator.geolocation;
+  g.watchPosition=(ok,ko)=>{ T.watch={ok,ko}; T.watchCount++; return 1; };
+  g.clearWatch=()=>{ T.watch=null; };
+  g.getCurrentPosition=(ok,ko)=>{ T.gcp++; T.pos?ok({coords:T.pos}):ko({code:2}); };
+  Object.defineProperty(navigator,'userAgent',{configurable:true,get:()=>T.ua});
+  Object.defineProperty(navigator,'maxTouchPoints',{configurable:true,get:()=>T.touch});
+  Object.defineProperty(navigator,'permissions',{configurable:true,get:()=>T.perm==='nessuna'?undefined:{query:async()=>({state:T.perm})}});
+  Object.defineProperty(document,'hidden',{configurable:true,get:()=>!!T.hidden});
+  const mm=window.matchMedia.bind(window);
+  window.matchMedia=q=>/reduced-motion/.test(q)?{matches:true,media:q,addListener(){},removeListener(){},addEventListener(){},removeEventListener(){}}:mm(q);
+  window.open=u=>{ T.opened.push(String(u)); return null; };
+  window.confirm=()=>true;
+  try{ navigator.vibrate=()=>true; }catch(e){}
+  if(navigator.serviceWorker) navigator.serviceWorker.register=()=>Promise.resolve();
+})();<\/script>`;
+
+let HTML='', nLoad=0;
+async function app(opz={}){
+  Object.assign(T,{calls:[],opened:[],watch:null,watchCount:0,gcp:0,pos:null,gbfs:ST.slice(),valhalla:'su',
+    ua:AND,touch:5,perm:'granted',hidden:false},opz);
+  // L'app sta nella cartella sopra: senza <base> manifest e icone si cercherebbero in tests/.
+  frame.srcdoc=HTML.replace('<head>','<head><base href="../">'+STUB)+'<!--'+(++nLoad)+'-->';
+  await new Promise(r=>frame.onload=r);
+  await sleep(300);
+  return frame.contentWindow;
+}
+function pulito(){ for(const k of Object.keys(localStorage)) if(k.startsWith('bm_')) localStorage.removeItem(k); }
+async function carica(w,dati,nome='trips.json',opz){
+  const corpo=dati instanceof Blob?dati:(typeof dati==='string'?dati:JSON.stringify(dati));
+  await w.processFile(new w.File([corpo],nome,opz)); await sleep(150);
+}
+function vicino(w,st,metri,acc=10){
+  if(!T.watch) throw new Error('il GPS non è partito');
+  T.watch.ok({coords:{latitude:st.lat+metri/111320,longitude:st.lon,accuracy:acc}});
+}
+function cattura(w,id){ vicino(w,S(id),10); w.closeCatch(false); }
+const preso=(w,id)=>!!V(w,'D').find(d=>d.id===id)?.v;
+const quante=w=>V(w,'D').filter(d=>d.v).length;
+const avviso=w=>w.document.getElementById('toast').textContent;
+const el=(w,id)=>w.document.getElementById(id);
+const card=(w,id)=>w.document.querySelector('#grid .card[data-i="'+V(w,'D').findIndex(d=>d.id===id)+'"]');
+
+// let e const dell'app non diventano proprietà di window: si leggono dentro l'iframe.
+const V=(w,espr)=>w.eval(espr);
+function ok(cond,msg){ if(!cond) throw new Error(msg); }
+function eq(a,b,msg){ if(a!==b) throw new Error(msg+': atteso '+JSON.stringify(b)+', trovato '+JSON.stringify(a)); }
+
+const TEST=[];
+const t=(gruppo,nome,fn)=>TEST.push({gruppo,nome,fn});
+
+// ═══ 1. Primo caricamento ═══
+t('Primo caricamento','Carico trips.json: 6 stazioni catturate su 30',async()=>{
+  pulito(); const w=await app(); await carica(w,BASE());
+  eq(el(w,'up-err').textContent,'','nessun errore');
+  eq(el(w,'app').style.display,'flex','app aperta');
+  eq(V(w,'D').length,30,'stazioni'); eq(quante(w),6,'catturate');
+  eq(el(w,'pl').textContent,'6/30','barra in alto');
+  eq(Object.keys(V(w,'GPS')).length,0,'catture GPS');
+});
+t('Primo caricamento','La schermata iniziale non scrive un numero fisso di stazioni',async()=>{
+  pulito(); const w=await app();
+  const testo=w.document.querySelector('#upload .sub').textContent;
+  ok(!/\d/.test(testo),'sottotitolo: '+testo);
+});
+t('Primo caricamento','Carico lo zip di BikeMi così com\'è, non compresso',async()=>{
+  pulito(); const w=await app();
+  await carica(w,await zip([{name:'orders.json',text:'[]'},{name:'trips.json',text:JSON.stringify(BASE())}]),'export.zip');
+  eq(el(w,'up-err').textContent,'','nessun errore'); eq(quante(w),6,'catturate');
+});
+t('Primo caricamento','Carico uno zip compresso',async()=>{
+  if(typeof CompressionStream==='undefined') throw new Error('questo browser non sa comprimere: test non eseguibile');
+  pulito(); const w=await app();
+  await carica(w,await zip([{name:'trips.json',text:JSON.stringify(BASE()),deflate:true}]),'export.zip');
+  eq(el(w,'up-err').textContent,'','nessun errore'); eq(quante(w),6,'catturate');
+});
+t('Primo caricamento','File sbagliato: errore chiaro, l\'app non si apre',async()=>{
+  pulito(); const w=await app(); await carica(w,'ciao','note.txt');
+  ok(el(w,'up-err').textContent.includes('non è un JSON valido'),'messaggio: '+el(w,'up-err').textContent);
+  ok(el(w,'app').style.display!=='flex','app rimasta chiusa');
+});
+t('Primo caricamento','Zip senza trips.json: l\'errore dice cosa contiene',async()=>{
+  pulito(); const w=await app();
+  await carica(w,await zip([{name:'orders.json',text:'[]'},{name:'penalties.json',text:'[]'}]),'export.zip');
+  const m=el(w,'up-err').textContent;
+  ok(m.includes('non trovo trips.json')&&m.includes('orders.json'),'messaggio: '+m);
+});
+
+t('Primo caricamento','Lancio delle Poké Ball: le catturate partono coperte e alla fine sono tutte scoperte',async()=>{
+  pulito(); const w=await app(); await carica(w,BASE());
+  w.prepareThrow();
+  eq(V(w,'curTab'),'pok','scheda aperta');
+  const c=card(w,'S01'), pk=c.querySelector('.pk');
+  eq(w.getComputedStyle(pk).fontSize,'0px','nome vero di una catturata ancora coperta');
+  eq(w.getComputedStyle(pk,'::after').content,'"???"','al suo posto compare');
+  eq(w.getComputedStyle(c.querySelector('.sn')).color,w.getComputedStyle(card(w,'S07').querySelector('.sn')).color,'stazione colorata come una non catturata');
+  eq(w.document.querySelectorAll('#grid .card.pend').length,6,'schede coperte');
+  await w.throwBalls('');
+  eq(w.document.querySelectorAll('#grid .card.pend').length,0,'schede ancora coperte');
+  eq(w.document.querySelectorAll('.fly').length,0,'Poké Ball rimaste a schermo');
+  eq(w.document.querySelectorAll('#grid .card.C').length,6,'catturate scoperte');
+  eq(card(w,'S07').querySelector('.pk').textContent,'???','una non catturata resta nascosta');
+  ok(avviso(w).includes('Pokédex pronto: 6 catturati su 30'),'avviso: '+avviso(w));
+});
+
+t('Primo caricamento','Lancio con tutte le stazioni catturate: solo le prime schermate, poi basta',async()=>{
+  pulito(); const w=await app();
+  await carica(w,ST.map((s,i)=>corsa(s.station_id,ST[(i+1)%30].station_id)));
+  w.prepareThrow();
+  const tab=w.document.getElementById('tab-pok');
+  let palle=0, scorso=0;
+  const oss=new w.MutationObserver(m=>m.forEach(r=>r.addedNodes.forEach(n=>{ if(n.classList&&n.classList.contains('fly')) palle++; })));
+  oss.observe(w.document.body,{childList:true});
+  const iv=setInterval(()=>{ scorso=Math.max(scorso,tab.scrollTop); },40);
+  await w.throwBalls(''); oss.disconnect(); clearInterval(iv);
+  const max=V(w,'THROW_SCREENS*BALLS_PER_SCREEN');
+  ok(palle>=1&&palle<=max,'Poké Ball lanciate: '+palle+' (massimo '+max+')');
+  ok(palle<30,'una Poké Ball per ognuna delle 30 catture: il lancio non si ferma alle prime schermate');
+  ok(scorso>0,'non è passato alla seconda schermata');
+  eq(tab.scrollTop,0,'alla fine torna in cima');
+  eq(w.document.querySelectorAll('#grid .card.pend').length,0,'schede ancora coperte');
+});
+
+t('Primo caricamento','Ordine delle schede: Stats, Pokédex, Mappa, Vicino, e lo scorrimento lo segue',async()=>{
+  pulito(); const w=await app(); await carica(w,BASE());
+  const etichette=[...w.document.querySelectorAll('#nav .nb')].map(b=>b.textContent.replace(/[^A-Za-zé]/g,''));
+  eq(etichette.join(' '),'Stats Pokédex Mappa Vicino','barra in basso');
+  w.goTab('stats'); const giro=[V(w,'curTab')];
+  for(let i=0;i<3;i++){ w.stepTab(1); giro.push(V(w,'curTab')); }
+  eq(giro.join(' '),'stats pok mappa near','scorrendo verso sinistra');
+  w.stepTab(1); eq(V(w,'curTab'),'near','oltre l\'ultima resta su Vicino');
+});
+
+t('Primo caricamento','Mappa: ogni stazione ha "Naviga fino qui" verso Google Maps in bici',async()=>{
+  pulito(); const w=await app(); await carica(w,BASE());
+  if(!w.L) throw new Error('libreria della mappa non caricata: serve la rete per unpkg.com');
+  w.goTab('mappa'); await sleep(700);
+  const marker=V(w,'layer').getLayers();
+  eq(marker.length,30,'stazioni sulla mappa');
+  const s=S('S07'), html=marker.map(m=>m.getPopup().getContent()).find(h=>h.includes('7 - Via Prova 7'));
+  ok(html,'fumetto della stazione 7 assente');
+  ok(html.includes('travelmode=bicycling')&&html.includes('destination='+s.lat+','+s.lon),'link: '+(html.match(/href="[^"]+"/)||['nessuno'])[0]);
+  ok(marker.every(m=>m.getPopup().getContent().includes('Naviga fino qui')),'una stazione senza il link');
+});
+
+t('Primo caricamento','Heatmap: si accende col 🔥, colora solo dove sono passato e resta accesa alla riapertura',async()=>{
+  pulito(); let w=await app(); await carica(w,[...BASE(),corsa('S03','S04'),corsa('S03','S04')]);
+  if(!w.L) throw new Error('libreria della mappa non caricata: serve la rete per unpkg.com');
+  w.goTab('mappa'); await sleep(700);
+  eq(el(w,'heat-btn').getAttribute('aria-pressed'),'false','spenta al primo avvio');
+  w.toggleHeat(); await sleep(100);
+  eq(localStorage.getItem('bm_heat'),'1','scelta salvata');
+  ok(el(w,'heat-leg').classList.contains('on'),'legenda nascosta');
+  const {pt,max}=w.heatPoints();
+  eq(pt.length,6,'stazioni con passaggi'); eq(max,3,'passaggi della stazione più frequentata (S03)');
+  const m=V(w,'mapObj');
+  m.fitBounds(ST.slice(0,9).map(s=>[s.lat,s.lon]),{animate:false}); w.drawHeat();
+  const cv=V(w,'heatCv'), g=cv.getContext('2d');
+  ok(cv.width>0&&cv.height>0,'canvas vuoto: '+cv.width+'×'+cv.height);
+  const alfa=id=>{ const p=m.latLngToContainerPoint([S(id).lat,S(id).lon]); return g.getImageData(Math.round(p.x),Math.round(p.y),1,1).data[3]; };
+  ok(alfa('S03')>0,'nessun colore sulla stazione più usata');
+  eq(alfa('S09'),0,'colore su una stazione mai visitata e lontana');
+  eq(w.getComputedStyle(m.getPane('heat')).pointerEvents,'none','la heatmap blocca i tocchi sui pallini');
+  ok(!/invert/.test(w.getComputedStyle(m.getPane('tilePane')).filter),'sotto la heatmap la mappa è rimasta scura');
+  const pall=V(w,'layer').getLayers(), verdi=pall.filter(c=>c.options.radius===3), grigi=pall.filter(c=>c.options.fillColor==='#475569');
+  eq(verdi.length,6,'catturate quasi trasparenti sopra la heatmap'); ok(verdi.every(c=>c.options.fillOpacity<.5),'catturate ancora coprenti');
+  eq(grigi.length,24,'stazioni da fare rimaste visibili');
+  w = await app(); w.goTab('mappa'); await sleep(700);
+  eq(el(w,'heat-btn').getAttribute('aria-pressed'),'true','riaperta l\'app la heatmap è spenta');
+  w.toggleHeat(); await sleep(100);
+  eq(localStorage.getItem('bm_heat'),'0','spegnimento non salvato');
+  ok(!el(w,'heat-leg').classList.contains('on'),'legenda rimasta a schermo');
+  eq(V(w,'heatCv').style.display,'none','heatmap rimasta a schermo');
+  ok(/invert/.test(w.getComputedStyle(V(w,'mapObj').getPane('tilePane')).filter),'spenta la heatmap la mappa non è tornata scura');
+});
+t('Primo caricamento','trips.json senza corse: errore che lo dice, l\'app non si apre',async()=>{
+  pulito(); const w=await app(); await carica(w,[]);
+  ok(el(w,'up-err').textContent.includes('nessuna corsa'),'messaggio: '+el(w,'up-err').textContent);
+  ok(el(w,'app').style.display!=='flex','app aperta senza dati');
+});
+t('Primo caricamento','Heatmap senza passaggi: avviso, nessun colore',async()=>{
+  pulito(); const w=await app(); await carica(w,BASE());
+  if(!w.L) throw new Error('libreria della mappa non caricata: serve la rete per unpkg.com');
+  // Con un file vero non capita, ma il caso va gestito: senza passaggi nessuna stazione pesa.
+  w.eval('AG.vc={}');
+  w.goTab('mappa'); await sleep(700); w.toggleHeat(); await sleep(100);
+  ok(avviso(w).includes('Nessun passaggio'),'avviso: '+avviso(w));
+  ok(!el(w,'heat-leg').classList.contains('on'),'legenda senza dati');
+  ok(/invert/.test(w.getComputedStyle(V(w,'mapObj').getPane('tilePane')).filter),'mappa schiarita senza niente da mostrare');
+});
+t('Primo caricamento','Mappa aperta, poi ↺ e nuovo file: la mappa si ricrea senza errori',async()=>{
+  pulito(); const w=await app(); await carica(w,BASE());
+  if(!w.L) throw new Error('libreria della mappa non caricata: serve la rete per unpkg.com');
+  w.goTab('mappa'); await sleep(700);
+  w.doReset(); await carica(w,[...BASE(),corsa('S07','S08')]);
+  w.goTab('mappa'); await sleep(700);
+  eq(V(w,'layer').getLayers().length,30,'stazioni sulla mappa nuova');
+  ok(V(w,'mapObj').getContainer()===el(w,'map'),'mappa non ricreata');
+});
+
+t('Primo caricamento','Data dei dati: dallo zip si legge quando BikeMi l\'ha generato',async()=>{
+  pulito(); const w=await app();
+  // corse di due giorni fa, export generato ieri: la data dello zip è quella giusta
+  await carica(w,await zip([{name:'trips.json',text:JSON.stringify(BASE())}],giorno(-1)),'export.zip');
+  eq(V(w,'AG.exp'),giorno(-1),'data letta dallo zip');
+  ok(el(w,'ghost').textContent.includes('Dati aggiornati al '+w.fmtDate(giorno(-1))),'nota: '+el(w,'ghost').textContent);
+  eq(el(w,'s7').parentNode.querySelector('.sl').textContent,'Ultima corsa nel file','etichetta');
+});
+t('Primo caricamento','Data dei dati: da un trips.json si usa la data del file',async()=>{
+  pulito(); const w=await app();
+  const quando=new Date(); quando.setDate(quando.getDate()-1);
+  await carica(w,BASE(),'trips.json',{lastModified:quando.getTime()});
+  eq(V(w,'AG.exp'),giorno(-1),'data del file');
+});
+t('Primo caricamento','Data dei dati: mai più vecchia dell\'ultima corsa contenuta',async()=>{
+  pulito(); const w=await app();
+  await carica(w,await zip([{name:'trips.json',text:JSON.stringify(BASE())}],'2020-01-01'),'export.zip');
+  eq(V(w,'AG.exp'),giorno(-2),'data');
+  pulito(); const w2=await app();
+  await carica(w2,await zip([{name:'trips.json',text:JSON.stringify(BASE())}]),'export.zip');
+  eq(V(w2,'AG.exp'),giorno(-2),'zip senza data');
+});
+t('Leggendari e nomi nascosti','Stazioni BikeMi reali: Molino Dorino è Mewtwo, Cascina Merlata Social Village è Mew',async()=>{
+  pulito(); const w=await app();
+  let reali;
+  try{ reali=(await (await fetch('https://gbfs.urbansharing.com/bikemi.com/station_information.json')).json()).data.stations; }
+  catch(e){ throw new Error('feed BikeMi non raggiungibile: test non eseguibile'); }
+  const map=w.assignPokemon(reali), id=t=>reali.find(s=>s.name.startsWith(t)).station_id;
+  eq(map[id('334 - Molino Dorino')],150,'Molino Dorino'); eq(map[id('501 - Cascina Merlata')],151,'Social Village');
+});
+
+// ═══ Nuovi Pokémon al ricaricamento ═══
+async function aspetta(cond,max=12000){ const t0=Date.now(); while(!cond()){ if(Date.now()-t0>max) return false; await sleep(80); } return true; }
+const conPiu=(...id)=>[...BASE(),...id.map(x=>corsa('S06',x,giorno(0)))];
+
+t('Nuovi Pokémon','Primo caricamento: nessun "nuovi" nell\'avviso, sono tutti nuovi',async()=>{
+  pulito(); const w=await app(); await carica(w,BASE());
+  ok(!avviso(w).includes('nuov'),'avviso: '+avviso(w));
+});
+t('Nuovi Pokémon','↺ ricorda le catture di prima, il file nuovo dice quanti sono nuovi',async()=>{
+  pulito(); const w=await app(); await carica(w,BASE());
+  w.doReset();
+  eq(JSON.parse(localStorage.getItem('bm_prima')).length,6,'catture ricordate');
+  await carica(w,conPiu('S07','S08'));
+  ok(avviso(w).includes('2 nuovi Pokémon'),'avviso: '+avviso(w));
+  eq(localStorage.getItem('bm_prima'),null,'ricordo cancellato dopo il caricamento');
+});
+t('Nuovi Pokémon','Fino a 15 nuovi: si apre la scheda di ognuno, "Avanti" fino all\'ultimo',async()=>{
+  pulito(); const w=await app(); await carica(w,conPiu('S07','S08'));
+  const lista=V(w,'D').filter(d=>['S07','S08'].includes(d.id));
+  w.prepareThrow();
+  const fine=w.throwBalls('',lista).then(()=>'fatto');
+  const sc=el(w,'catch'), b2=()=>w.document.querySelector('#catch .c-b2'), b1=()=>w.document.querySelector('#catch .c-b1');
+  ok(await aspetta(()=>sc.className.includes('reveal')),'la prima scheda non si è aperta');
+  eq(w.document.querySelector('#catch .c-hd').textContent,'Nuovo Pokémon!','intestazione');
+  eq(b2().textContent,'Avanti','pulsante con altri da vedere'); eq(b1().textContent,'Salta gli altri','pulsante per uscire');
+  const primo=el(w,'c-pk').textContent; b2().click();
+  ok(await aspetta(()=>sc.className.includes('reveal')&&el(w,'c-pk').textContent!==primo),'la seconda scheda non si è aperta');
+  eq(b2().textContent,'Fantastico!','ultimo: pulsante finale');
+  b2().click(); eq(await fine,'fatto','fine sequenza');
+  eq(w.document.querySelectorAll('#grid .card.pend').length,0,'schede ancora coperte');
+  eq(b1().textContent,'Vedi nel Pokédex','etichetta ripristinata per le catture GPS');
+});
+t('Nuovi Pokémon','"Salta gli altri" interrompe la sequenza e scopre tutto',async()=>{
+  pulito(); const w=await app(); await carica(w,conPiu('S07','S08','S09'));
+  const lista=V(w,'D').filter(d=>['S07','S08','S09'].includes(d.id));
+  w.prepareThrow();
+  let schede=0; const sc=el(w,'catch');
+  new w.MutationObserver(()=>{ if(sc.className.includes('reveal')) schede++; }).observe(sc,{attributes:true,attributeFilter:['class']});
+  const fine=w.throwBalls('',lista);
+  ok(await aspetta(()=>sc.className.includes('reveal')),'la prima scheda non si è aperta');
+  w.document.querySelector('#catch .c-b1').click(); await fine;
+  eq(schede,1,'schede aperte');
+  eq(w.document.querySelectorAll('#grid .card.pend').length,0,'schede ancora coperte');
+});
+t('Nuovi Pokémon','Più di 15 nuovi: nessuna scheda, solo il lancio',async()=>{
+  pulito(); const w=await app();
+  const tutti=ST.slice(6).map(s=>s.station_id);   // 24 nuovi oltre ai 6 di BASE
+  await carica(w,conPiu(...tutti));
+  const lista=V(w,'D').filter(d=>tutti.includes(d.id));
+  w.prepareThrow();
+  let aperta=false; const sc=el(w,'catch');
+  new w.MutationObserver(()=>{ if(sc.className.includes('reveal')) aperta=true; }).observe(sc,{attributes:true,attributeFilter:['class']});
+  await w.throwBalls('',lista);
+  eq(aperta,false,'si è aperta una scheda');
+  eq(w.document.querySelectorAll('#grid .card.pend').length,0,'schede ancora coperte');
+});
+
+// ═══ 2. Utente che non modifica nulla ═══
+t('Utente che non modifica nulla','Riapro l\'app: tutto come prima, senza ricaricare né scaricare',async()=>{
+  pulito(); let w=await app(); await carica(w,BASE());
+  const prima=V(w,'D').map(d=>d.id+'='+d.n+':'+d.v).join();
+  w=await app({perm:'prompt'});
+  eq(el(w,'app').style.display,'flex','app aperta direttamente');
+  eq(V(w,'D').map(d=>d.id+'='+d.n+':'+d.v).join(),prima,'stazioni, Pokémon e catture');
+  eq(T.calls.filter(u=>u.includes('urbansharing')).length,0,'richieste al feed BikeMi');
+});
+t('Utente che non modifica nulla','Ricarico lo stesso file: nessun Pokémon cambia, nessun avviso',async()=>{
+  pulito(); const w=await app(); await carica(w,BASE());
+  const prima=V(w,'D').map(d=>d.id+'='+d.n+':'+d.v).join();
+  await carica(w,BASE());
+  eq(V(w,'D').map(d=>d.id+'='+d.n+':'+d.v).join(),prima,'stazioni, Pokémon e catture');
+  eq(avviso(w),'','avviso');
+});
+
+// ═══ 3. Tre stazioni visitate davvero ═══
+t('Tre stazioni visitate davvero','Passo davanti a 3 stazioni nuove: 3 catture GPS',async()=>{
+  pulito(); const w=await app(); await carica(w,BASE());
+  for(const id of ['S07','S08','S09']) cattura(w,id);
+  eq(quante(w),9,'catturate'); eq(el(w,'pl').textContent,'9/30','barra in alto');
+  eq(['S07','S08','S09'].filter(id=>V(w,'gpsOnly')(id)).length,3,'segnate come GPS');
+  eq(['S07','S08','S09'].filter(id=>card(w,id).classList.contains('G')).length,3,'badge blu nel Pokédex');
+});
+t('Tre stazioni visitate davvero','Ricarico il file aggiornato: le 3 diventano catture normali',async()=>{
+  pulito(); const w=await app(); await carica(w,BASE());
+  for(const id of ['S07','S08','S09']) cattura(w,id);
+  await carica(w,[...BASE(),corsa('S06','S07',giorno(0)),corsa('S07','S08',giorno(0)),corsa('S08','S09',giorno(0))]);
+  eq(quante(w),9,'catturate'); eq(Object.keys(V(w,'GPS')).length,0,'catture ancora GPS');
+  ok(V(w,'AG').vc.S07>=1&&V(w,'AG').vc.S09>=1,'passaggi registrati');
+  ok(avviso(w).includes('3 catture GPS confermate'),'avviso: '+avviso(w));
+});
+
+// ═══ 4. Stazione vuota: catturata col GPS ma lì non ha lasciato la bici ═══
+t('Stazione vuota','Catturata col GPS ma assente dal file: al ricaricamento sparisce',async()=>{
+  pulito(); const w=await app(); await carica(w,BASE());
+  cattura(w,'S09'); eq(quante(w),7,'dopo la cattura GPS');
+  await carica(w,BASE());
+  eq(preso(w,'S09'),false,'S09 catturata'); eq(quante(w),6,'catturate');
+  eq(card(w,'S09').querySelector('.pk').textContent,'???','nome di nuovo nascosto');
+  ok(avviso(w).includes('1 tolta'),'avviso: '+avviso(w));
+});
+t('Stazione vuota','Due vere e una vuota: tiene le due, toglie la terza',async()=>{
+  pulito(); const w=await app(); await carica(w,BASE());
+  for(const id of ['S07','S08','S09']) cattura(w,id);
+  await carica(w,[...BASE(),corsa('S06','S07',giorno(0)),corsa('S07','S08',giorno(0))]);
+  eq(preso(w,'S07'),true,'S07'); eq(preso(w,'S08'),true,'S08'); eq(preso(w,'S09'),false,'S09');
+  ok(avviso(w).includes('2 catture GPS confermate')&&avviso(w).includes('1 tolta'),'avviso: '+avviso(w));
+});
+t('Stazione vuota','Dopo averla tolta si può ricatturare',async()=>{
+  pulito(); const w=await app(); await carica(w,BASE());
+  cattura(w,'S09'); await carica(w,BASE());
+  cattura(w,'S09'); eq(preso(w,'S09'),true,'S09 ricatturata');
+});
+
+// ═══ 5. GPS ═══
+t('GPS','Radar spento oltre 250 m, acceso entro, più rapido da vicino',async()=>{
+  pulito(); const w=await app(); await carica(w,BASE());
+  const r=el(w,'radar'), vel=()=>parseFloat(w.document.querySelector('#radar .mini').style.animationDuration);
+  vicino(w,S('S07'),600); ok(!r.classList.contains('on'),'a 600 m il radar è acceso');
+  vicino(w,S('S07'),200); ok(r.classList.contains('on'),'a 200 m il radar è spento'); eq(V(w,'radarId'),'S07','stazione del radar');
+  const lontano=vel(); vicino(w,S('S07'),70);
+  ok(vel()<lontano,'a 70 m oscilla '+vel()+'s, a 200 m '+lontano+'s');
+});
+t('GPS','GPS impreciso: anche a 20 m non cattura',async()=>{
+  pulito(); const w=await app(); await carica(w,BASE());
+  vicino(w,S('S07'),20,90); eq(preso(w,'S07'),false,'catturata con 90 m di incertezza');
+});
+t('GPS','GPS preciso entro 40 m: cattura, con la data di oggi',async()=>{
+  pulito(); const w=await app(); await carica(w,BASE());
+  vicino(w,S('S07'),15,12);
+  eq(preso(w,'S07'),true,'catturata'); eq(V(w,'GPS').S07,giorno(0),'data');
+  ok(el(w,'catch').className.includes('reveal'),'scheda di cattura: '+el(w,'catch').className);
+  eq(el(w,'c-pk').textContent,'Hai catturato '+V(w,'D').find(d=>d.id==='S07').pk+'!','nome svelato');
+});
+t('GPS','Stazione già catturata: niente radar né cattura',async()=>{
+  pulito(); const w=await app(); await carica(w,BASE());
+  vicino(w,S('S01'),5); eq(Object.keys(V(w,'GPS')).length,0,'catture GPS');
+  ok(!el(w,'radar').classList.contains('on'),'radar acceso');
+});
+t('GPS','Leggendario: il radar lo annuncia',async()=>{
+  pulito(); const w=await app(); await carica(w,BASE());
+  vicino(w,S('S20'),200);
+  ok(w.document.querySelector('#radar .r-t1').textContent.includes('leggendario'),'testo: '+w.document.querySelector('#radar .r-t1').textContent);
+});
+t('GPS','La cattura GPS resta dopo aver chiuso e riaperto l\'app',async()=>{
+  pulito(); let w=await app(); await carica(w,BASE()); cattura(w,'S07');
+  w=await app();
+  eq(preso(w,'S07'),true,'S07 catturata'); eq(V(w,'gpsOnly')('S07'),true,'ancora segnata GPS');
+});
+t('GPS','Ricarico il file senza rete: errore chiaro e le catture GPS restano',async()=>{
+  pulito(); let w=await app(); await carica(w,BASE()); cattura(w,'S07');
+  w.doReset(); T.gbfs='giu'; await carica(w,BASE());
+  const m=el(w,'up-err').textContent;
+  ok(m.includes('Controlla la connessione'),'messaggio: '+m);
+  ok(JSON.parse(localStorage.getItem('bm_gps')||'{}').S07,'cattura GPS di S07 persa');
+  T.gbfs=ST.slice(); await carica(w,[...BASE(),corsa('S07','S01')]);
+  eq(preso(w,'S07'),true,'S07 confermata dal file');
+  eq(V(w,'gpsOnly')('S07'),false,'S07 ancora solo GPS');
+});
+
+// ═══ 6. Permesso di posizione ═══
+async function avvio(w,ua,perm,ricordo){
+  w.stopWatch(); w.hideGeoChip(); T.watchCount=0; T.ua=ua; T.perm=perm;
+  if(ricordo) localStorage.setItem('bm_geo','1'); else localStorage.removeItem('bm_geo');
+  await w.startWatch();
+  return {gps:T.watchCount>0, pulsante:el(w,'geochip').classList.contains('on')};
+}
+t('Permesso di posizione','Android con permesso: il GPS parte da solo',async()=>{
+  pulito(); const w=await app(); await carica(w,BASE());
+  const r=await avvio(w,AND,'granted',true); eq(r.gps,true,'GPS'); eq(r.pulsante,false,'pulsante');
+});
+t('Permesso di posizione','iPhone che ricorda il permesso: il GPS parte da solo',async()=>{
+  pulito(); const w=await app(); await carica(w,BASE());
+  const r=await avvio(w,IOS,'granted',true); eq(r.gps,true,'GPS'); eq(r.pulsante,false,'pulsante');
+});
+t('Permesso di posizione','iPhone che l\'ha dimenticato: pulsante, nessun popup a sorpresa',async()=>{
+  pulito(); const w=await app(); await carica(w,BASE());
+  const r=await avvio(w,IOS,'prompt',true); eq(r.gps,false,'GPS partito da solo'); eq(r.pulsante,true,'pulsante');
+});
+t('Permesso di posizione','iPhone: il tocco sul pulsante avvia il GPS',async()=>{
+  pulito(); const w=await app(); await carica(w,BASE());
+  await avvio(w,IOS,'prompt',true); el(w,'geochip').click(); await sleep(50);
+  eq(T.watchCount>0,true,'GPS'); eq(el(w,'geochip').classList.contains('on'),false,'pulsante ancora visibile');
+});
+t('Permesso di posizione','Chi non ha mai usato il GPS: nessun pulsante, nessuna richiesta',async()=>{
+  pulito(); const w=await app(); await carica(w,BASE());
+  const r=await avvio(w,IOS,'prompt',false); eq(r.gps,false,'GPS'); eq(r.pulsante,false,'pulsante');
+});
+t('Permesso di posizione','Permesso negato: nessun tentativo',async()=>{
+  pulito(); const w=await app(); await carica(w,BASE());
+  const r=await avvio(w,AND,'denied',true); eq(r.gps,false,'GPS'); eq(r.pulsante,false,'pulsante');
+});
+t('Permesso di posizione','In secondo piano: su iPhone resta acceso, su Android si ferma',async()=>{
+  pulito(); const w=await app(); await carica(w,BASE());
+  const prova=async ua=>{ await avvio(w,ua,'granted',true); T.hidden=true; w.document.dispatchEvent(new Event('visibilitychange'));
+    const acceso=!!T.watch; T.hidden=false; return acceso; };
+  eq(await prova(IOS),true,'iPhone'); eq(await prova(AND),false,'Android');
+});
+
+// ═══ 7. Stazioni BikeMi che cambiano ═══
+async function feed(w,stazioni){ localStorage.setItem('bm_chk','0'); T.gbfs=stazioni; await w.refreshStations(); }
+t('Stazioni BikeMi che cambiano','Apre una stazione: compare, con un numero mai usato',async()=>{
+  pulito(); const w=await app(); await carica(w,BASE());
+  const usati=new Set(V(w,'D').map(d=>d.n));
+  await feed(w,[...ST,{station_id:'S99',name:'99 - Stazione Nuova',address:'',lat:C[0]+0.002,lon:C[1]}]);
+  const n=V(w,'D').find(d=>d.id==='S99'); ok(n,'nuova stazione assente');
+  eq(V(w,'D').length,31,'stazioni'); ok(!usati.has(n.n),'numero riciclato: '+n.n);
+  ok(avviso(w).includes('1 stazione nuova'),'avviso: '+avviso(w));
+});
+t('Stazioni BikeMi che cambiano','Chiude una stazione catturata: sparisce, il suo numero non va a una nuova',async()=>{
+  pulito(); const w=await app(); await carica(w,BASE());
+  const vecchio=V(w,'D').find(d=>d.id==='S03').n;
+  await feed(w,[...ST.filter(s=>s.station_id!=='S03'),{station_id:'S99',name:'99 - Stazione Nuova',address:'',lat:C[0]+0.002,lon:C[1]}]);
+  ok(!V(w,'D').find(d=>d.id==='S03'),'S03 ancora presente');
+  eq(V(w,'AG').gh,1,'stazioni dismesse'); eq(quante(w),5,'catturate');
+  ok(V(w,'D').find(d=>d.id==='S99').n!==vecchio,'la nuova ha preso il numero della chiusa');
+});
+t('Stazioni BikeMi che cambiano','Feed irraggiungibile: niente cambia',async()=>{
+  pulito(); const w=await app(); await carica(w,BASE());
+  const prima=V(w,'D').map(d=>d.id).join(); await feed(w,'giu');
+  eq(V(w,'D').map(d=>d.id).join(),prima,'elenco');
+});
+t('Stazioni BikeMi che cambiano','Feed vuoto: ignorato, il Pokédex non si azzera',async()=>{
+  pulito(); const w=await app(); await carica(w,BASE());
+  await feed(w,[]); eq(V(w,'D').length,30,'stazioni'); eq(quante(w),6,'catturate');
+});
+t('Stazioni BikeMi che cambiano','Entro 12 ore dall\'ultimo controllo: nessuna richiesta',async()=>{
+  pulito(); const w=await app(); await carica(w,BASE());
+  T.calls=[]; await w.refreshStations();
+  eq(T.calls.filter(u=>u.includes('urbansharing')).length,0,'richieste al feed');
+});
+
+// ═══ 8. Leggendari e nomi nascosti ═══
+t('Leggendari e nomi nascosti','21 leggendari alle 21 stazioni più lontane, Mewtwo alla più lontana',async()=>{
+  pulito(); const w=await app(); await carica(w,BASE());
+  const lontane=ST.slice(9).map(s=>s.station_id);   // S10–S30
+  ok(lontane.every(id=>V(w,'LEG').has(V(w,'D').find(d=>d.id===id).n)),'una lontana senza leggendario');
+  ok(!['S01','S05','S09'].some(id=>V(w,'LEG').has(V(w,'D').find(d=>d.id===id).n)),'una vicina con leggendario');
+  eq(V(w,'D').find(d=>d.id==='S30').pk,'Mewtwo','più lontana');
+  eq(new Set(V(w,'D').map(d=>d.n)).size,30,'numeri unici');
+});
+t('Leggendari e nomi nascosti','Non catturata: "???" nella griglia, nel dettaglio e nella lista Vicino',async()=>{
+  pulito(); const w=await app(); await carica(w,BASE());
+  eq(card(w,'S07').querySelector('.pk').textContent,'???','nome in griglia');
+  eq(card(w,'S07').querySelector('.pn').textContent,'#???','numero in griglia');
+  eq(card(w,'S30').querySelector('.pn').textContent,'★ #???','leggendario in griglia');
+  eq(card(w,'S01').querySelector('.pk').textContent,V(w,'D').find(d=>d.id==='S01').pk,'catturata visibile');
+  w.openM(V(w,'D').find(d=>d.id==='S30'));
+  eq(el(w,'mpk').textContent,'???','nome nel dettaglio'); eq(el(w,'mlg').textContent,'★ LEGGENDARIO','stella');
+  w.closeM();
+  V(w,'myPos=['+C+']'); w.renderNear();
+  const nomi=[...w.document.querySelectorAll('#near-list .nrp')].map(e=>e.textContent);
+  ok(nomi.length&&nomi.every(n=>n==='???'),'lista Vicino: '+nomi.slice(0,3).join(', '));
+});
+t('Leggendari e nomi nascosti','Cercare per nome non svela i Pokémon non catturati',async()=>{
+  pulito(); const w=await app(); await carica(w,BASE());
+  const cerca=q=>{ el(w,'srch').value=q; w.applyFilter(); return el(w,'cnt').textContent; };
+  eq(cerca('mewtwo'),'0 di 30','cercando Mewtwo');
+  eq(cerca(V(w,'D').find(d=>d.id==='S01').pk.toLowerCase()),'1 di 30','cercando un catturato');
+  eq(cerca('via prova 7'),'1 di 30','cercando una stazione');
+});
+t('Leggendari e nomi nascosti','Chi aveva la versione senza leggendari: scambio minimo, una volta sola',async()=>{
+  pulito();
+  const vecchia={}; ST.forEach((s,i)=>vecchia[s.station_id]=i+1); vecchia.S01=150;   // S01 aveva il numero di Mewtwo
+  localStorage.setItem('bm_map',JSON.stringify(vecchia));
+  const w=await app(); await carica(w,BASE());
+  const n=id=>V(w,'D').find(d=>d.id===id).n;
+  eq(n('S30'),150,'S30 (la più lontana)'); eq(n('S01'),30,'S01 prende il vecchio numero di S30');
+  ['S02','S05','S09'].forEach(id=>eq(n(id),vecchia[id],id+' invariata'));
+  eq(new Set(V(w,'D').map(d=>d.n)).size,30,'numeri unici');
+  const ancora=w.assignPokemon(ST);
+  ok(ST.every(s=>ancora[s.station_id]===n(s.station_id)),'il secondo avvio ha cambiato di nuovo i numeri');
+});
+
+// ═══ 9. Casi limite ═══
+t('Casi limite','Tutte catturate: trofeo, nessuna tratta da proporre',async()=>{
+  pulito(); const w=await app();
+  await carica(w,ST.map((s,i)=>corsa(s.station_id,ST[(i+1)%30].station_id)));
+  eq(quante(w),30,'catturate');
+  V(w,'myPos=['+C+']'); w.renderNear();
+  ok(el(w,'near-list').textContent.includes('Hai catturato tutte'),'lista Vicino: '+el(w,'near-list').textContent.slice(0,60));
+  w.buildRide(2); ok(el(w,'ride-plan').textContent.includes('Nessuna stazione nuova'),'tratta: '+el(w,'ride-plan').textContent);
+  w.setF('M'); ok(el(w,'grid-empty').textContent.includes('tutte e 30'),'Pokédex filtrato: '+el(w,'grid-empty').textContent);
+});
+t('Casi limite','Percentuale per difetto: 100% solo quando le hai davvero tutte',async()=>{
+  pulito(); const w=await app();
+  // 29 su 30 fa 96,7%: arrotondando scriverebbe 97%, e con 319 su 320 scriverebbe 100%
+  await carica(w,ST.slice(0,29).map((s,i)=>corsa(s.station_id,ST[(i+1)%29].station_id)));
+  eq(quante(w),29,'catturate');
+  eq(el(w,'s1').textContent,'96%','completato');
+});
+t('Casi limite','Date senza orario: si leggono nel fuso del telefono, senza slittare di un giorno',async()=>{
+  pulito(); const w=await app();
+  eq(w.fmtDate('2026-09-17'),'17 set 26','data');
+  eq(w.fmtDate('2026-01-01'),'1 gen 26','primo dell\'anno');
+});
+t('Casi limite','Solo stazioni ormai chiuse: 0 catturate, con la spiegazione',async()=>{
+  pulito(); const w=await app(); await carica(w,[corsa('X1','X2'),corsa('X2','X1')]);
+  eq(quante(w),0,'catturate'); eq(V(w,'AG').gh,2,'dismesse');
+  ok(el(w,'ghost').textContent.includes('dismesso'),'nota: '+el(w,'ghost').textContent);
+  ok(el(w,'tops').textContent.includes('Nessuna delle stazioni'),'preferite: '+el(w,'tops').textContent);
+});
+t('Casi limite','Una sola corsa circolare: niente "0 km", e "1 corsa" al singolare',async()=>{
+  pulito(); const w=await app(); await carica(w,[corsa('S01','S01')]);
+  eq(el(w,'sc-km').style.display,'none','riquadro dei km');
+  ok(el(w,'peak-hr').textContent.includes('1 corsa'),'ora preferita: '+el(w,'peak-hr').textContent);
+});
+t('Casi limite','Tratta più lunga: km su strada se il servizio risponde, stima ≈ se è giù',async()=>{
+  pulito(); let w=await app(); await carica(w,BASE());
+  let v=w.document.querySelector('#recs .rcv').textContent;
+  ok(v.includes('su strada')&&!v.includes('≈'),'servizio attivo: '+v);
+  pulito(); w=await app({valhalla:'giu'}); await carica(w,BASE());
+  v=w.document.querySelector('#recs .rcv').textContent;
+  ok(v.includes('≈'),'servizio giù: '+v);
+});
+
+// ═══ esecuzione ═══
+(async()=>{
+  const salvati={}; for(const k of Object.keys(localStorage)) if(k.startsWith('bm_')) salvati[k]=localStorage.getItem(k);
+  const out=document.getElementById('out'), sum=document.getElementById('sum');
+  HTML=await (await fetch('../index.html',{cache:'no-store'})).text();
+  let gruppo='', passati=0, falliti=0; const t0=Date.now();
+  try{
+    for(const x of TEST){
+      if(x.gruppo!==gruppo){ gruppo=x.gruppo; out.insertAdjacentHTML('beforeend','<h2>'+gruppo+'</h2>'); }
+      const riga=document.createElement('div'); riga.className='t run';
+      riga.innerHTML='<span class="e">…</span><span class="n"></span><span class="ms"></span>';
+      riga.querySelector('.n').textContent=x.nome; out.appendChild(riga);
+      const s=Date.now();
+      try{ await x.fn(); riga.className='t ok'; riga.querySelector('.e').textContent='✓'; passati++; }
+      catch(e){ riga.className='t ko'; riga.querySelector('.e').textContent='✗'; falliti++;
+        const d=document.createElement('div'); d.className='d'; d.textContent=e.message; riga.querySelector('.n').appendChild(d); }
+      riga.querySelector('.ms').textContent=(Date.now()-s)+' ms';
+      sum.innerHTML='<b class="ok">'+passati+' passati</b> · <b class="'+(falliti?'ko':'ok')+'">'+falliti+' falliti</b> su '+TEST.length;
+    }
+  } finally {
+    pulito(); for(const k in salvati) localStorage.setItem(k,salvati[k]);
+    sum.innerHTML+=' · '+((Date.now()-t0)/1000).toFixed(1)+' s';
+    window.__RISULTATO={passati,falliti,totale:TEST.length};
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,2099 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>BikeMi Pokédex</title>
+<meta name="theme-color" content="#cc0000">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="BikeMi Pokédex">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root{--red:#cc0000;--yellow:#ffcb05;--green:#22c55e;--bg:#13131f;--card:#1e1e2e;--txt:#eee;--mut:#888;--dim:#555;--safe-b:env(safe-area-inset-bottom,0px);--nav-h:56px}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif}
+button{font-family:inherit}
+
+/* ═══ CARICAMENTO DEL FILE ═══ */
+#upload{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100dvh;padding:28px 20px;gap:18px;text-align:center}
+/* Icona accanto al titolo, non sopra: recupera circa 70px di altezza, così su
+   telefoni piccoli il riquadro sotto non finisce fuori schermo. */
+.up-head{display:flex;align-items:center;gap:11px}
+.bike-lg{width:54px;height:34px;flex-shrink:0}
+.bike-sm{width:22px;height:14px;flex-shrink:0;vertical-align:-1px;margin-right:6px}
+#upload h1{font-size:25px;font-weight:700;color:var(--yellow)}
+#upload .sub{font-size:14px;color:var(--mut);max-width:290px;line-height:1.6}
+#dz{border:2px dashed #3a3a52;border-radius:16px;padding:32px 20px;width:100%;max-width:300px;cursor:pointer;background:#1a1a2e;transition:border-color .2s,background .2s}
+#dz:hover,#dz.over{border-color:var(--yellow);background:#1f1f36}
+#dz input{display:none}
+#dz .i{font-size:38px}
+#dz .h{font-size:13px;color:var(--mut);margin-top:10px;line-height:1.5}
+#dz .fmt{font-size:11px;color:#4e4e6a;margin-top:9px;padding-top:9px;border-top:1px solid #2a2a44}
+#dz .fmt strong{color:var(--yellow);font-weight:600}
+#up-err{color:#f87171;font-size:13px;display:none;max-width:290px;line-height:1.5}
+#up-spin{display:none;color:var(--yellow);font-size:13px}
+#upload .tip{font-size:11px;color:#3f3f56;max-width:324px;line-height:1.6}
+#tip-priv{white-space:nowrap}
+#upload .tip a{color:#52526e}
+
+/* ═══ STRUTTURA: barra in alto, schede, barra in basso ═══ */
+#app{display:none;flex-direction:column;height:100dvh}
+#top{background:#16213e;padding:8px 12px;display:flex;align-items:center;gap:9px;flex-shrink:0;border-bottom:1px solid #1e1e42}
+#top h1{font-size:14px;font-weight:700;color:var(--yellow);white-space:nowrap}
+#pw{flex:1;height:6px;background:#2a2a44;border-radius:3px;overflow:hidden;min-width:30px}
+#pf{height:100%;background:var(--green);border-radius:3px;transition:width .5s}
+#pl{font-size:12px;color:var(--mut);white-space:nowrap;font-variant-numeric:tabular-nums}
+.ibtn{background:none;border:none;color:var(--dim);font-size:15px;padding:3px 5px;cursor:pointer;line-height:1}
+.ibtn:active{color:var(--txt)}
+#content{flex:1;overflow:hidden;position:relative}
+.tab{position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;display:none}
+.tab.on{display:block}
+#nav{display:flex;background:#16213e;border-top:1px solid #1e1e42;flex-shrink:0;padding-bottom:var(--safe-b)}
+.nb{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border:none;background:none;color:var(--mut);font-size:9.5px;cursor:pointer;height:var(--nav-h);transition:color .15s}
+.nb.on{color:var(--yellow)}
+.nb .ni{font-size:19px;line-height:1}
+
+/* ═══ BARRA DI RICERCA E FILTRI, comune alle schede ═══ */
+.bar{padding:9px 11px;display:flex;gap:7px;flex-wrap:wrap;align-items:center;background:#1a1a2a;position:sticky;top:0;z-index:10;border-bottom:1px solid #24243c}
+.srch{flex:1;min-width:90px;padding:7px 12px;background:#2a2a44;border:1px solid #3a3a52;border-radius:18px;color:var(--txt);font-size:14px;outline:none}
+.srch:focus{border-color:var(--yellow)}
+.chips{display:flex;gap:5px}
+.ch{padding:6px 11px;border-radius:14px;border:none;font-size:12px;font-weight:600;cursor:pointer;opacity:.42;transition:opacity .15s}
+.ch.on{opacity:1}
+.ch-a{background:#2a2a44;color:#aaa}
+.ch-c{background:#14532d;color:#4ade80}
+.ch-m{background:#431407;color:#f87171}
+.cnt{font-size:11px;color:var(--dim);white-space:nowrap}
+
+/* ═══ GRIGLIA DEL POKÉDEX ═══ */
+#grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(94px,1fr));gap:8px;padding:10px 11px 16px}
+.card{background:var(--card);border-radius:10px;padding:9px 5px 7px;text-align:center;cursor:pointer;border:1.5px solid #2a2a44;position:relative;transition:transform .12s;user-select:none}
+.card:active{transform:scale(.94)}
+.card.C{border-color:#15803d;background:#0a1f12}
+.card.M{opacity:.58}
+.card.M:active{opacity:.9}
+.pn{font-size:9.5px;color:#46465e;font-weight:700;letter-spacing:.3px;font-variant-numeric:tabular-nums}
+.card img{width:62px;height:62px;image-rendering:pixelated;display:block;margin:2px auto}
+.card.M img{filter:brightness(0)}
+.card.C img{filter:drop-shadow(0 0 5px rgba(74,222,128,.3))}
+.pk{font-size:11px;font-weight:700;color:#b4b4c4;margin:2px 0 1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.card.C .pk{color:#4ade80}
+.sn{font-size:8.5px;color:#4e4e66;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.card.C .sn{color:#6ee7b7}
+.cbg{position:absolute;top:4px;right:4px;background:#15803d;color:#fff;font-size:8px;width:14px;height:14px;border-radius:50%;display:none;align-items:center;justify-content:center;font-weight:900}
+.card.C .cbg{display:flex}
+
+/* ═══ VICINO ═══ */
+#tab-near{padding-bottom:16px}
+.geo-box{padding:22px 18px;text-align:center}
+.geo-box .gi{font-size:38px;margin-bottom:10px}
+.geo-box .gt{font-size:14px;color:var(--mut);line-height:1.6;margin-bottom:16px;max-width:290px;margin-left:auto;margin-right:auto}
+.pbtn{background:var(--red);color:#fff;border:none;border-radius:22px;padding:11px 22px;font-size:14px;font-weight:600;cursor:pointer}
+.pbtn:active{opacity:.8}
+.pbtn.alt{background:#2a2a44;color:var(--yellow)}
+.pbtn:disabled{opacity:.5;cursor:default}
+#near-err{color:#f87171;font-size:12.5px;padding:0 18px 14px;text-align:center;line-height:1.6;display:none}
+.ride{margin:4px 11px 12px;background:var(--card);border-radius:10px;padding:11px 12px}
+.ride-lbl{font-size:12px;color:var(--mut);margin-bottom:9px;line-height:1.4}
+.ride-btns{display:flex;gap:7px}
+.pbtn.sm{flex:1;font-size:13px;padding:9px 6px;border-radius:16px}
+.ride-plan{font-size:11.5px;color:var(--mut);line-height:1.65;margin-top:10px}
+.ride-plan:empty{display:none}
+.ride-plan b{color:var(--yellow);font-weight:600}
+.ride-plan .rp-d{color:var(--dim)}
+.nr{display:flex;align-items:center;gap:11px;background:var(--card);border-radius:10px;padding:9px 12px;margin:0 11px 7px;cursor:pointer;border:1.5px solid transparent;transition:transform .12s}
+.nr:active{transform:scale(.98)}
+.nr.C{border-color:#15803d;background:#0a1f12}
+.nr img{width:44px;height:44px;image-rendering:pixelated;flex-shrink:0}
+.nr.M img{filter:brightness(0);opacity:.75}
+.nri{flex:1;min-width:0}
+.nrp{font-size:12.5px;font-weight:700;color:#b4b4c4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nr.C .nrp{color:#4ade80}
+.nrs{font-size:11px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px}
+.nrd{text-align:right;flex-shrink:0}
+.nrdm{font-size:14px;font-weight:700;color:var(--yellow);font-variant-numeric:tabular-nums}
+.nrdt{font-size:10px;color:var(--dim);margin-top:1px}
+
+/* ═══ MAPPA ═══ */
+#tab-mappa{padding:0;overflow:hidden;display:none;flex-direction:column}
+#tab-mappa.on{display:flex}
+#map{flex:1;width:100%;background:#13131f}
+/* Le tile OpenStreetMap non chiedono chiavi API; si invertono i colori per
+   adattarle al tema scuro. Il filtro tocca solo le tile: i pallini restano dei
+   loro colori veri. */
+#map .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) saturate(.18) brightness(.95) contrast(.85)}
+.leaflet-popup-content-wrapper{background:#1e1e2e;color:#eee;border-radius:10px}
+.leaflet-popup-tip{background:#1e1e2e}
+.leaflet-popup-content{margin:10px 12px;font-size:12.5px;line-height:1.5}
+.leaflet-container a.leaflet-popup-close-button{color:#666}
+.leaflet-popup-content a.pnav{display:inline-block;margin-top:8px;padding:5px 12px;border-radius:14px;
+  background:#2a2a44;color:#60a5fa;font-weight:600;text-decoration:none}
+.leaflet-popup-content a.pnav:active{opacity:.8}
+/* Heatmap: sotto i pallini (overlayPane sta a 400) e trasparente ai tocchi,
+   così i popup delle stazioni restano cliccabili. */
+.leaflet-heat-pane{pointer-events:none}
+/* Città sbiadita sotto la heatmap: grigio chiaro e semitrasparente su fondo chiaro. */
+#map.heat{background:#f1f3f5}
+#map.heat .leaflet-tile-pane{filter:grayscale(1) brightness(1.04) contrast(.82);opacity:.5}
+.leaflet-heat-pane canvas{position:absolute;left:0;top:0}
+#heat-btn{border-radius:8px;filter:grayscale(1) opacity(.6)}
+#heat-btn.on{filter:none;background:rgba(249,115,22,.18)}
+#heat-leg{display:none;position:absolute;left:10px;bottom:22px;z-index:1050;align-items:center;gap:6px;
+  padding:4px 9px;border-radius:12px;background:rgba(15,15,26,.75);color:#cfcfe0;font-size:10.5px}
+#heat-leg.on{display:flex}
+#heat-leg i{width:70px;height:7px;border-radius:4px;
+  background:linear-gradient(90deg,#bbf7d0,#4ade80,#16a34a,#14532d)}
+/* Sulla mappa lo scorrimento col dito serve a Leaflet, quindi per cambiare
+   scheda servono dei pulsanti. Lo z-index supera i livelli e i controlli di
+   Leaflet, che arrivano a circa 1000. */
+.mnav-arrow{position:absolute;top:50%;transform:translateY(-50%);z-index:1100;width:26px;height:52px;
+  border:none;background:rgba(15,15,26,.62);color:#cfcfe0;font-size:22px;line-height:1;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;padding:0;font-family:inherit}
+.mnav-arrow:active{background:rgba(15,15,26,.9);color:#fff}
+.mnav-arrow.left{left:0;border-radius:0 9px 9px 0}
+.mnav-arrow.right{right:0;border-radius:9px 0 0 9px}
+
+/* ═══ STATISTICHE ═══ */
+#tab-stats{padding:13px 13px 20px}
+.sec{margin-bottom:19px}
+.sec h2{font-size:10.5px;text-transform:uppercase;letter-spacing:.9px;color:var(--mut);margin-bottom:9px;padding-left:2px}
+.sg{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.sc{background:var(--card);border-radius:11px;padding:13px 8px;text-align:center}
+.sv{font-size:24px;font-weight:700;line-height:1.1;margin-bottom:3px;font-variant-numeric:tabular-nums}
+.sl{font-size:10.5px;color:var(--mut)}
+.sv.sm{font-size:15px}
+.g{color:var(--green)}.y{color:var(--yellow)}.r{color:#f87171}.b{color:#60a5fa}.v{color:#a78bfa}
+.row{background:var(--card);border-radius:8px;padding:9px 12px;margin-bottom:5px;display:flex;align-items:center;gap:10px}
+.rl{font-size:11px;color:var(--mut);min-width:86px}
+.rbw{flex:1;background:#2a2a44;border-radius:3px;height:7px;overflow:hidden}
+.rbf{height:100%;border-radius:3px;background:var(--green)}
+.rbf.b2{background:#60a5fa}
+.rp{font-size:11.5px;color:var(--green);min-width:32px;text-align:right;font-weight:600;font-variant-numeric:tabular-nums}
+.rp.b2{color:#60a5fa}
+.ts{background:var(--card);border-radius:8px;padding:9px 12px;margin-bottom:5px;display:flex;align-items:center;gap:10px}
+.tr{font-size:17px;min-width:26px;text-align:center}
+.ti{flex:1;min-width:0}
+.tn{font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tc{font-size:10.5px;color:var(--mut);margin-top:1px}
+.tpk{color:#60a5fa}
+.note{font-size:11px;color:var(--dim);line-height:1.6;margin-top:8px;padding:0 3px}
+.empty{font-size:13px;color:var(--mut);line-height:1.6;text-align:center;padding:34px 26px}
+.empty:empty{display:none}
+.map-empty{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:1050;
+  background:rgba(15,15,26,.92);border-radius:12px;max-width:74%;padding:18px 20px}
+.peak{font-size:11.5px;color:var(--mut);margin-bottom:7px;padding-left:2px}
+.peak b{color:var(--yellow);font-weight:600}
+.peak b.b2{color:#60a5fa}
+.hrs{display:flex;align-items:flex-end;gap:2px;height:62px;background:var(--card);border-radius:10px 10px 0 0;padding:9px 9px 0}
+.hr{flex:1;background:#33334f;border-radius:2px 2px 0 0;min-height:2px}
+/* Ora e giorno più frequenti: classe "max" e non "pk", che è già il nome del
+   Pokémon nelle schede e trascinava con sé margini e grassetto. */
+.hr.max{background:var(--yellow)}
+.hrx{display:flex;justify-content:space-between;font-size:9.5px;color:#43435c;background:var(--card);border-radius:0 0 10px 10px;padding:5px 9px 8px;margin-bottom:5px}
+.dows{display:flex;gap:5px;background:var(--card);border-radius:10px;padding:10px 10px 7px}
+.dw{flex:1;text-align:center}
+.dwb{height:44px;display:flex;align-items:flex-end}
+.dwf{width:100%;background:#2d4a78;border-radius:3px 3px 0 0;min-height:2px}
+.dw.max .dwf{background:#60a5fa}
+.dwl{font-size:10px;color:#4e4e68;margin-top:4px}
+.dw.max .dwl{color:#60a5fa}
+.rc{background:var(--card);border-radius:8px;padding:9px 12px;margin-bottom:5px;display:flex;align-items:center;gap:11px}
+.rci{font-size:16px;min-width:22px;text-align:center}
+.rcb{flex:1;min-width:0}
+.rct{font-size:10.5px;color:var(--mut)}
+.rcv{font-size:13px;font-weight:600;margin-top:1px}
+.rcs{font-size:10px;color:var(--dim);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ═══ DETTAGLIO DI UNA STAZIONE (pannello dal basso) ═══ */
+#mbg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:200;align-items:flex-end;justify-content:center}
+#mbg.open{display:flex}
+#mdl{background:#1e1e2e;border-radius:18px 18px 0 0;padding:16px 20px calc(20px + var(--safe-b));width:100%;max-width:440px;text-align:center;border:2px solid #333;border-bottom:none;max-height:88dvh;overflow-y:auto}
+#mdl.C{border-color:#15803d}
+#mdrg{width:36px;height:4px;background:#3a3a52;border-radius:2px;margin:0 auto 12px}
+.mn{font-size:10.5px;color:#46465e;font-variant-numeric:tabular-nums}
+#mdl img{width:94px;height:94px;image-rendering:pixelated;display:block;margin:2px auto 2px}
+#mdl.M img{filter:brightness(0)}
+.mpk{font-size:21px;font-weight:700}
+#mdl.C .mpk{color:#4ade80}
+.mbd{display:inline-block;padding:3px 13px;border-radius:18px;font-size:12px;margin:6px 0 11px}
+.mbd.C{background:#14532d;color:#4ade80}
+.mbd.M{background:#431407;color:#f87171}
+.mst{font-size:14.5px;font-weight:600;margin-bottom:3px}
+.mad{font-size:12px;color:var(--mut);line-height:1.5}
+.mmeta{display:flex;gap:7px;margin:13px 0 11px}
+.mm{flex:1;background:#191926;border-radius:9px;padding:9px 6px}
+.mmv{font-size:15px;font-weight:700;color:var(--yellow);font-variant-numeric:tabular-nums}
+.mmv.sm{font-size:12px}
+.mml{font-size:9.5px;color:var(--dim);margin-top:2px}
+.mnav{display:block;background:#2a2a44;color:#60a5fa;border:none;border-radius:20px;padding:10px;font-size:13px;font-weight:600;width:100%;cursor:pointer;text-decoration:none}
+.mnav:active{opacity:.8}
+.mge{font-size:10.5px;color:#34344a;margin-top:11px}
+
+/* ═══ INVITO A INSTALLARE ═══ */
+#install{display:none;align-items:center;gap:10px;padding:10px 12px;background:#1d2b45;
+  border-top:1px solid #27395c;flex-shrink:0}
+#inst-txt{flex:1;font-size:11.5px;color:#c3d2ea;line-height:1.45}
+#inst-txt b{color:var(--yellow);font-weight:600}
+#inst-btn{background:var(--yellow);color:#2a2100;border:none;border-radius:14px;padding:7px 14px;
+  font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap}
+#inst-btn:active{opacity:.8}
+#inst-x{background:none;border:none;color:#5f7398;font-size:13px;cursor:pointer;padding:2px 4px;font-family:inherit}
+#inst-x:active{color:#fff}
+.inst-card{background:#1d2b45;border:1px solid #2b3f66;border-radius:14px;padding:14px 16px;
+  width:100%;max-width:300px;text-align:left}
+.inst-card:empty{display:none}
+.ic-t{font-size:13px;font-weight:700;color:var(--yellow);margin-bottom:5px}
+.ic-b{font-size:11.5px;color:#b4c4de;line-height:1.55}
+.ic-b b{color:#fff;font-weight:600}
+.ic-btn{margin-top:11px;width:100%;background:var(--yellow);color:#2a2100;border:none;border-radius:16px;
+  padding:9px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit}
+.ic-btn:active{opacity:.8}
+
+/* ═══ POKÉ BALL DI CARICAMENTO ═══ */
+#loader{position:fixed;inset:0;z-index:400;background:var(--bg);display:none;flex-direction:column;align-items:center;justify-content:center;gap:28px;overflow:hidden}
+#loader.on{display:flex}
+#loader.gone{opacity:0;pointer-events:none;transition:opacity .4s}
+.ball{width:118px;height:118px;position:relative;z-index:2;filter:drop-shadow(0 10px 22px rgba(0,0,0,.55))}
+.ball .half{position:absolute;left:0;width:118px;height:59px;box-sizing:border-box;transition:transform .55s cubic-bezier(.35,0,.25,1)}
+.ball .top{top:0;background:#e3350d;border:3px solid #16161e;border-bottom:none;border-radius:59px 59px 0 0}
+.ball .bot{bottom:0;background:#f4f4f6;border:3px solid #16161e;border-top:none;border-radius:0 0 59px 59px}
+.ball .band{position:absolute;top:55px;left:0;width:118px;height:8px;background:#16161e;z-index:2}
+.ball .btn{position:absolute;top:44px;left:44px;width:30px;height:30px;box-sizing:border-box;border-radius:50%;background:#f4f4f6;border:3px solid #16161e;z-index:3}
+.ball .btn::after{content:'';position:absolute;inset:4px;border-radius:50%;background:#d6d6de}
+#loader.on .ball{animation:wob 1.15s ease-in-out infinite}
+#loader.on .btn::after{animation:blink 1.15s ease-in-out infinite}
+@keyframes wob{0%,100%{transform:rotate(0) translateY(0)}14%{transform:rotate(-13deg) translateY(-7px)}30%{transform:rotate(12deg) translateY(0)}46%{transform:rotate(-8deg) translateY(-4px)}62%{transform:rotate(5deg) translateY(0)}}
+@keyframes blink{0%,100%{background:#d6d6de}50%{background:#ffcb05}}
+#loader.opening .ball{animation:none;transform:none}
+/* Si apre a cerniera come una Poké Ball vera: il coperchio si ribalta all'indietro
+   sulla linea della fascia, la metà sotto resta ferma con fascia e pulsante.
+   Prima le due metà volavano via separate e sembrava una palla che si rompe. */
+.ball .top{transform-origin:50% 100%}
+#loader.opening .top{transform:translateY(-16px) perspective(230px) rotateX(48deg)}
+/* la luce che esce dalla fessura tra coperchio e fascia */
+.ball .glow{position:absolute;left:12px;right:12px;top:40px;height:26px;border-radius:50%;z-index:2;opacity:0;
+  background:radial-gradient(ellipse at 50% 60%,#fff 0%,#fff4b8 42%,rgba(255,203,5,0) 74%);transition:opacity .3s ease .1s}
+#loader.opening .glow{opacity:1}
+#loader.opening .btn::after{animation:none;background:#ffcb05}
+/* Un lampo che parte dalla fessura del coperchio. mix-blend-mode:screen fa sì che
+   il giallo schiarisca lo sfondo: mescolato normalmente al blu diventava oliva. */
+.flash{position:absolute;top:50%;left:50%;width:16px;height:16px;margin:-8px 0 0 -8px;opacity:0;z-index:1;
+  mix-blend-mode:screen;
+  background:radial-gradient(circle,#fff 0%,rgba(255,248,222,.95) 25%,rgba(255,214,90,.5) 44%,rgba(255,214,90,0) 60%)}
+#loader.opening .flash{animation:burst .75s ease-out forwards}
+@keyframes burst{0%{opacity:1;transform:scale(1)}25%{opacity:.85}100%{opacity:0;transform:scale(90)}}
+#load-txt{position:relative;font-size:14px;color:var(--mut);text-align:center;padding:0 28px;min-height:20px;z-index:3;transition:transform .55s cubic-bezier(.35,0,.25,1),color .3s}
+#loader.opening #load-txt{color:#fff;font-weight:600}
+@media (prefers-reduced-motion:reduce){
+  #loader.on .ball,#loader.on .btn::after,#loader.opening .flash{animation:none}
+  .ball .half{transition:none}
+}
+
+/* ═══ RADAR: stazione nuova nei paraggi ═══ */
+#radar{position:absolute;left:12px;bottom:12px;z-index:1200;display:none;align-items:center;gap:10px;
+  background:rgba(22,33,62,.96);border:1px solid #33497a;border-radius:28px;padding:6px 16px 6px 7px;
+  cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.45);font-family:inherit;color:#dbe4f5;text-align:left}
+#radar.on{display:flex;animation:rin .35s ease-out}
+#geochip{position:absolute;left:12px;bottom:12px;z-index:1200;display:none;align-items:center;gap:10px;
+  background:rgba(22,33,62,.96);border:1px dashed #4b6396;border-radius:28px;padding:7px 16px 7px 11px;
+  cursor:pointer;font-family:inherit;color:#dbe4f5;text-align:left}
+#geochip.on{display:flex;animation:rin .35s ease-out}
+#geochip .gc-i{font-size:18px;line-height:1}
+@keyframes rin{0%{transform:translateY(18px);opacity:0}100%{transform:none;opacity:1}}
+#radar .mini{position:relative;width:34px;height:34px;flex-shrink:0;transform-origin:50% 90%;animation:mwob 1s ease-in-out infinite}
+#radar .mini .ball{position:absolute;top:0;left:0;transform:scale(.288);transform-origin:0 0;filter:none}
+@keyframes mwob{0%,100%{transform:rotate(0)}18%{transform:rotate(-18deg)}36%{transform:rotate(14deg)}54%{transform:rotate(-7deg)}72%{transform:rotate(0)}}
+.r-t1,.r-t2{display:block}
+.r-t1{font-size:12.5px;font-weight:700;color:var(--yellow)}
+.r-t2{font-size:11px;color:#9fb1d1;margin-top:1px}
+.r-t2 b{color:#fff;font-weight:600}
+
+/* ═══ CATTURA ═══ */
+#catch{position:fixed;inset:0;z-index:450;display:none;flex-direction:column;align-items:center;justify-content:center;
+  padding:24px;background:radial-gradient(circle at 50% 42%,#26365c 0%,#13131f 72%)}
+#catch.on{display:flex}
+.c-stage{position:relative;width:118px;height:118px}
+.c-ball{position:absolute;inset:0;transform-origin:50% 88%}
+#catch.drop .c-ball{animation:cdrop .6s cubic-bezier(.3,1.45,.5,1) both}
+@keyframes cdrop{0%{transform:translateY(-280px) scale(.55)}100%{transform:none}}
+#catch.shake .c-ball{animation:cshake 2.4s ease-in-out both}
+@keyframes cshake{0%,24%,36%,60%,72%,96%,100%{transform:rotate(0)}6%{transform:rotate(-24deg)}14%{transform:rotate(20deg)}
+  42%{transform:rotate(-20deg)}50%{transform:rotate(16deg)}78%{transform:rotate(-14deg)}86%{transform:rotate(10deg)}}
+#catch.shake .btn::after{animation:blink .8s ease-in-out infinite}
+#catch.click .btn::after{background:#ffcb05}
+/* Lo scatto è il culmine: la palla si schiaccia a terra e rimbalza, e cinque
+   stelle schizzano lontano a ventaglio invece di restarle attaccate. */
+#catch.click .c-ball{animation:cpop2 .45s cubic-bezier(.3,1.6,.5,1)}
+@keyframes cpop2{0%{transform:scale(1)}35%{transform:scale(1.15,.86)}65%{transform:scale(.95,1.06)}100%{transform:scale(1)}}
+.c-stars i{position:absolute;top:50%;left:50%;width:24px;height:24px;margin:-12px 0 0 -12px;background:#ffcb05;opacity:0;
+  filter:drop-shadow(0 0 6px rgba(255,203,5,.8));
+  clip-path:polygon(50% 0,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%)}
+#catch.click .c-stars i{animation:cstar .95s cubic-bezier(.15,.75,.3,1) forwards}
+.c-stars i:nth-child(1){--dx:-104px;--dy:-52px;--r:-150deg}
+.c-stars i:nth-child(2){--dx:-56px;--dy:-112px;--r:-90deg;animation-delay:.05s}
+.c-stars i:nth-child(3){--dx:0px;--dy:-138px;--r:120deg;animation-delay:.09s}
+.c-stars i:nth-child(4){--dx:56px;--dy:-112px;--r:90deg;animation-delay:.05s}
+.c-stars i:nth-child(5){--dx:104px;--dy:-52px;--r:150deg}
+@keyframes cstar{0%{opacity:0;transform:translate(0,-34px) scale(.2) rotate(0)}12%{opacity:1}70%{opacity:1}
+  100%{opacity:0;transform:translate(var(--dx),var(--dy)) scale(1) rotate(var(--r))}}
+.c-msg{margin-top:28px;font-size:14px;color:#b4c4de;min-height:20px;text-align:center}
+.c-card{display:none;text-align:center;max-width:320px;width:100%;background:#1e1e2e;border:2px solid #ffcb05;
+  border-radius:20px;padding:20px 20px 16px;box-shadow:0 18px 50px rgba(0,0,0,.55),0 0 40px rgba(255,203,5,.15)}
+#catch.reveal .c-stage,#catch.reveal .c-msg{display:none}
+#catch.reveal .c-card{display:block;animation:cpop .5s cubic-bezier(.3,1.45,.5,1) both}
+@keyframes cpop{0%{transform:scale(.6);opacity:0}100%{transform:none;opacity:1}}
+.c-hd{font-size:12px;color:var(--yellow);font-weight:700;letter-spacing:1.6px;text-transform:uppercase}
+.c-n{font-size:11px;color:#6b6b88;margin-top:2px;font-variant-numeric:tabular-nums}
+.c-img{width:128px;height:128px;image-rendering:pixelated;display:block;margin:2px auto;filter:brightness(0);transition:filter .9s ease .2s}
+.c-img.lit{filter:drop-shadow(0 0 16px rgba(255,203,5,.5))}
+.c-pk{font-size:23px;font-weight:800;margin:0 0 8px}
+.c-st{font-size:13.5px;font-weight:600;color:#ddd}
+.c-meta{font-size:11.5px;color:var(--mut);margin-top:4px;line-height:1.5}
+.c-btns{display:flex;gap:8px;margin-top:16px}
+.c-btns button{flex:1;border:none;border-radius:18px;padding:10px 6px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit}
+.c-b1{background:#2a2a44;color:#cfd8ee}
+.c-b2{background:var(--yellow);color:#2a2100}
+
+/* ═══ LANCIO DOPO IL CARICAMENTO ═══ */
+/* Schede catturate ancora coperte: identiche a una non catturata finché non arriva la ball */
+.card.pend{border-color:#2a2a44!important;background:var(--card)!important;opacity:.58}
+.card.pend img{filter:brightness(0)!important}
+.card.pend .cbg{visibility:hidden}
+/* stessi "???" e stesso grigio delle non catturate: non si deve capire quali stanno per scoprirsi */
+.card.pend .pk,.card.pend .pn{font-size:0}
+.card.pend .pk::after{content:'???';font-size:11px;color:#b4b4c4}
+.card.pend .pn::after{content:'#???';font-size:9.5px;color:#46465e}
+.card.pend .sn{color:#4e4e66!important}
+.card.pop{animation:cardpop .55s cubic-bezier(.3,1.5,.5,1)}
+.card.L.pop{animation-name:cardpopL}
+@keyframes cardpop{0%{transform:scale(.86);box-shadow:0 0 0 rgba(74,222,128,0)}55%{transform:scale(1.08);box-shadow:0 0 18px rgba(74,222,128,.6)}100%{transform:scale(1);box-shadow:0 0 0 rgba(74,222,128,0)}}
+@keyframes cardpopL{0%{transform:scale(.86);box-shadow:0 0 0 rgba(255,203,5,0)}55%{transform:scale(1.12);box-shadow:0 0 26px rgba(255,203,5,.8)}100%{transform:scale(1);box-shadow:0 0 0 rgba(255,203,5,0)}}
+.fly{position:fixed;left:0;top:0;width:26px;height:26px;border-radius:50%;z-index:500;pointer-events:none;box-sizing:border-box;
+  border:2px solid #16161e;background:linear-gradient(#e3350d 0 44%,#16161e 44% 56%,#f4f4f6 56%);box-shadow:0 4px 10px rgba(0,0,0,.45)}
+.fly::after{content:'';position:absolute;left:50%;top:50%;width:9px;height:9px;margin:-4.5px 0 0 -4.5px;border-radius:50%;
+  box-sizing:border-box;background:#f4f4f6;border:2px solid #16161e}
+.hit{position:fixed;left:0;top:0;width:22px;height:22px;border-radius:50%;z-index:499;pointer-events:none;mix-blend-mode:screen;
+  background:radial-gradient(circle,#fff 0%,rgba(255,240,170,.9) 35%,rgba(255,203,5,0) 70%);animation:hitfx .42s ease-out forwards}
+@keyframes hitfx{0%{transform:var(--at) scale(.3);opacity:1}100%{transform:var(--at) scale(4.2);opacity:0}}
+
+/* Leggendari: dorati anche da non catturati, per invogliare il viaggio */
+.card.L{border-color:#8a6d12}
+.card.L .pn{color:#c9a227}
+.card.C.L{border-color:#ffcb05;background:#211c08}
+.card.C.L img{filter:drop-shadow(0 0 7px rgba(255,203,5,.55))}
+.card.C.L .pk{color:#ffcb05}
+.mlg{display:inline-block;margin:0 0 6px;padding:2px 11px;border-radius:12px;font-size:11px;font-weight:700;
+  letter-spacing:.6px;background:#3a2f06;color:#ffcb05}
+.mlg:empty{display:none}
+
+/* Catture GPS: distinte da quelle confermate dall'export */
+.card.G .cbg{background:#2563eb}
+.mbd.G{background:#1e3a8a;color:#93c5fd}
+@media (prefers-reduced-motion:reduce){
+  #radar .mini,#radar.on{animation:none}
+  .c-img{transition:none}
+}
+
+/* ═══ AVVISO TEMPORANEO IN BASSO ═══ */
+#toast{position:fixed;bottom:calc(var(--nav-h) + var(--safe-b) + 16px);left:50%;transform:translateX(-50%);background:#2f2f48;color:#eee;padding:9px 18px;border-radius:20px;font-size:13px;opacity:0;transition:opacity .25s;pointer-events:none;z-index:300;width:max-content;max-width:calc(100vw - 32px);text-align:center;line-height:1.45}
+#toast.on{opacity:1}
+</style>
+</head>
+<body>
+
+<!-- La bici come emoji la disegna il sistema operativo: blu su Windows, grigia su
+     Apple. Disegnandola in SVG è identica su ogni dispositivo. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="bike" viewBox="0 0 64 40">
+    <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="14" cy="27" r="10.5" stroke="#fff" stroke-width="3.2"/>
+      <circle cx="50" cy="27" r="10.5" stroke="#fff" stroke-width="3.2"/>
+      <path d="M14 27 L24 14 L31 27 L42 14 L50 27" stroke="#e8471f" stroke-width="3"/>
+      <path d="M24 14 L42 14" stroke="#e8471f" stroke-width="3"/>
+      <path d="M31 27 L14 27" stroke="#e8471f" stroke-width="3"/>
+      <path d="M42 14 L47.5 9.5" stroke="#ffcb05" stroke-width="3"/>
+      <path d="M20.5 11.5 L27 11.5" stroke="#ffcb05" stroke-width="3"/>
+    </g>
+  </symbol>
+</svg>
+
+<!-- ══════ CARICAMENTO DEL FILE ══════ -->
+<div id="upload">
+  <div class="up-head">
+    <svg class="bike-lg" viewBox="0 0 64 40" aria-hidden="true"><use href="#bike"/></svg>
+    <h1>BikeMi Pokédex</h1>
+  </div>
+  <div class="sub">Carica i tuoi dati BikeMi e scopri quante stazioni di Milano hai già catturato</div>
+  <div id="dz" onclick="document.getElementById('fi').click()" ondragover="dzOver(event)" ondragleave="dzOut()" ondrop="dzDrop(event)">
+    <div class="i">📂</div>
+    <div class="h">Tocca per scegliere il file<br>oppure trascinalo qui</div>
+    <div class="fmt">lo <strong>.zip</strong> di BikeMi oppure <strong>trips.json</strong></div>
+    <input id="fi" type="file" accept=".json,.zip,application/json,application/zip,application/x-zip-compressed" onchange="onFile(event)">
+  </div>
+  <div id="up-err"></div>
+  <div class="tip">Come ottenere il file: accedi su <a href="https://www.bikemi.it" target="_blank" rel="noopener">bikemi.it</a> → Account → Scarica i tuoi dati. Puoi caricare lo zip così com'è.<br><br><span id="tip-priv">I dati restano sul dispositivo: nessun server, nessun invio.</span></div>
+  <div class="inst-card" id="inst-tip"></div>
+</div>
+
+<!-- ══════ POKÉ BALL DI CARICAMENTO ══════ -->
+<div id="loader" role="status" aria-live="polite">
+  <div class="ball">
+    <div class="half top"></div>
+    <div class="half bot"></div>
+    <div class="band"></div>
+    <div class="glow"></div>
+    <div class="btn"></div>
+  </div>
+  <div class="flash"></div>
+  <div id="load-txt"></div>
+</div>
+
+<!-- ══════ CATTURA ══════ -->
+<div id="catch" role="dialog" aria-live="assertive">
+  <div class="c-stage">
+    <div class="c-ball">
+      <div class="ball"><div class="half top"></div><div class="half bot"></div><div class="band"></div><div class="btn"></div></div>
+    </div>
+    <div class="c-stars"><i></i><i></i><i></i><i></i><i></i></div>
+  </div>
+  <div class="c-msg" id="c-msg"></div>
+  <div class="c-card">
+    <div class="c-hd">Preso!</div>
+    <div class="c-n" id="c-n"></div>
+    <img class="c-img" id="c-img" src="" alt="">
+    <div class="c-pk" id="c-pk"></div>
+    <div class="c-st" id="c-st"></div>
+    <div class="c-meta" id="c-meta"></div>
+    <div class="c-btns">
+      <button class="c-b1" onclick="closeCatch(true)">Vedi nel Pokédex</button>
+      <button class="c-b2" onclick="closeCatch(false)">Fantastico!</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ APP ══════ -->
+<div id="app">
+  <div id="top">
+    <h1><svg class="bike-sm" viewBox="0 0 64 40" aria-hidden="true"><use href="#bike"/></svg>BikeMi Pokédex</h1>
+    <div id="pw"><div id="pf"></div></div>
+    <span id="pl"></span>
+    <button class="ibtn" onclick="doShare()" aria-label="Condividi">↗</button>
+    <button class="ibtn" onclick="doReset()" aria-label="Cambia file">↺</button>
+  </div>
+
+  <div id="content">
+    <button id="geochip" onclick="startWatch(true)">
+      <span class="gc-i">📡</span>
+      <span><span class="r-t1">Attiva la cattura GPS</span><span class="r-t2">tocca per cercare Pokémon qui intorno</span></span>
+    </button>
+    <button id="radar" onclick="openRadar()" aria-live="polite">
+      <span class="mini"><span class="ball"><span class="half top"></span><span class="half bot"></span><span class="band"></span><span class="btn"></span></span></span>
+      <span><span class="r-t1">Pokémon selvatico!</span><span class="r-t2" id="radar-txt"></span></span>
+    </button>
+    <!-- ── POKÉDEX ── -->
+    <div class="tab" id="tab-pok">
+      <div class="bar">
+        <input id="srch" class="srch" type="search" placeholder="🔍 Stazione o Pokémon…" oninput="applyFilter()">
+        <div class="chips">
+          <button class="ch ch-a on" onclick="setF('all')">Tutti</button>
+          <button class="ch ch-c" onclick="setF('C')">✔</button>
+          <button class="ch ch-m" onclick="setF('M')">?</button>
+        </div>
+        <span class="cnt" id="cnt"></span>
+      </div>
+      <div id="grid"></div>
+      <div class="empty" id="grid-empty"></div>
+    </div>
+
+    <!-- ── VICINO ── -->
+    <div class="tab" id="tab-near">
+      <div class="geo-box" id="geo-ask">
+        <div class="gi">📍</div>
+        <div class="gt">Trova le stazioni più vicine a te, così sai quali catturare adesso</div>
+        <button class="pbtn" onclick="locate()">Usa la mia posizione</button>
+      </div>
+      <div id="near-err"></div>
+      <div id="near-body" style="display:none">
+        <div class="bar">
+          <div class="chips">
+            <button class="ch ch-m on" onclick="setNF('M')">Da catturare</button>
+            <button class="ch ch-a" onclick="setNF('all')">Tutte</button>
+          </div>
+          <span class="cnt" id="near-cnt"></span>
+          <button class="ibtn" onclick="locate()" aria-label="Aggiorna posizione" style="margin-left:auto">⟳</button>
+        </div>
+        <div class="ride">
+          <div class="ride-lbl"><svg class="bike-sm" viewBox="0 0 64 40" aria-hidden="true"><use href="#bike"/></svg>Proponi una tratta: ritiri nella stazione più vicina e lasci la bici in una da catturare</div>
+          <div class="ride-btns">
+            <button class="pbtn sm" onclick="buildRide(2)">~2 km</button>
+            <button class="pbtn sm" onclick="buildRide(4)">~4 km</button>
+            <button class="pbtn sm" onclick="buildRide(6)">~6 km</button>
+          </div>
+          <div class="ride-plan" id="ride-plan"></div>
+        </div>
+        <div id="near-list"></div>
+      </div>
+    </div>
+
+    <!-- ── MAPPA ── -->
+    <div class="tab" id="tab-mappa">
+      <div class="bar">
+        <div class="chips">
+          <button class="ch ch-a on" onclick="setMF('all')">Tutte</button>
+          <button class="ch ch-c" onclick="setMF('C')">Catturate</button>
+          <button class="ch ch-m" onclick="setMF('M')">Da fare</button>
+        </div>
+        <button class="ibtn" id="heat-btn" onclick="toggleHeat()" aria-label="Mappa di calore" aria-pressed="false" style="margin-left:auto;font-size:17px">🔥</button>
+        <button class="ibtn" onclick="locateOnMap()" aria-label="La mia posizione" style="font-size:17px">📍</button>
+      </div>
+      <div id="map"></div>
+      <div id="heat-leg" aria-hidden="true"><span>meno</span><i></i><span>più passaggi</span></div>
+      <div class="empty map-empty" id="map-empty"></div>
+      <button class="mnav-arrow left" onclick="stepTab(-1)" aria-label="Scheda precedente">‹</button>
+      <button class="mnav-arrow right" onclick="stepTab(1)" aria-label="Scheda successiva">›</button>
+    </div>
+
+    <!-- ── STATS ── -->
+    <div class="tab on" id="tab-stats">
+      <div class="sec"><h2>Collezione</h2>
+        <div class="sg">
+          <div class="sc"><div class="sv g" id="s0">–</div><div class="sl">Catturate</div></div>
+          <div class="sc"><div class="sv y" id="s1">–</div><div class="sl">Completato</div></div>
+          <div class="sc"><div class="sv r" id="s2">–</div><div class="sl">Mancanti</div></div>
+          <div class="sc"><div class="sv b" id="s3">–</div><div class="sl">Corse totali</div></div>
+        </div>
+        <div class="note" id="ghost"></div>
+      </div>
+      <div class="sec"><h2>In sella</h2>
+        <div class="sg">
+          <div class="sc"><div class="sv g" id="s4">–</div><div class="sl">Tempo totale</div></div>
+          <div class="sc"><div class="sv y" id="s5">–</div><div class="sl">Corsa media</div></div>
+          <div class="sc" id="sc-km"><div class="sv g" id="s8">–</div><div class="sl">Distanza minima</div></div>
+          <div class="sc" id="sc-avgkm"><div class="sv y" id="s9">–</div><div class="sl">Tratta media</div></div>
+          <div class="sc"><div class="sv sm v" id="s6">–</div><div class="sl">Prima corsa</div></div>
+          <div class="sc"><div class="sv sm v" id="s7">–</div><div class="sl">Ultima corsa nel file</div></div>
+        </div>
+        <div class="note" id="km-note"></div>
+      </div>
+      <div class="sec"><h2>Corse per anno</h2><div id="years"></div></div>
+      <div class="sec" id="sec-hr"><h2>A che ora pedali</h2>
+        <div class="peak" id="peak-hr"></div>
+        <div class="hrs" id="hrs"></div>
+        <div class="hrx"><span>00</span><span>06</span><span>12</span><span>18</span><span>23</span></div>
+      </div>
+      <div class="sec" id="sec-dw"><h2>In che giorni</h2>
+        <div class="peak" id="peak-dw"></div>
+        <div class="dows" id="dows"></div>
+      </div>
+      <div class="sec"><h2>Record personali</h2><div id="recs"></div></div>
+      <div class="sec"><h2>Generazioni</h2><div id="gens"></div></div>
+      <div class="sec"><h2>Stazioni preferite</h2><div id="tops"></div></div>
+    </div>
+  </div>
+
+  <div id="install">
+    <span id="inst-txt"></span>
+    <button id="inst-btn" onclick="doInstall()">Installa</button>
+    <button id="inst-x" onclick="dismissInstall()" aria-label="Chiudi">✕</button>
+  </div>
+
+  <nav id="nav">
+    <button class="nb on" id="nb-stats" onclick="goTab('stats')"><span class="ni">📊</span>Stats</button>
+    <button class="nb" id="nb-pok" onclick="goTab('pok')"><span class="ni">📖</span>Pokédex</button>
+    <button class="nb" id="nb-mappa" onclick="goTab('mappa')"><span class="ni">🗺️</span>Mappa</button>
+    <button class="nb" id="nb-near" onclick="goTab('near')"><span class="ni">📍</span>Vicino</button>
+  </nav>
+</div>
+
+<!-- ══════ DETTAGLIO DI UNA STAZIONE ══════ -->
+<div id="mbg" onclick="if(event.target===this)closeM()">
+  <div id="mdl">
+    <div id="mdrg"></div>
+    <div class="mn" id="mn"></div>
+    <img id="mimg" src="" alt="">
+    <div class="mlg" id="mlg"></div>
+    <div class="mpk" id="mpk"></div>
+    <div id="mbd"></div>
+    <div class="mst" id="mst"></div>
+    <div class="mad" id="mad"></div>
+    <div class="mmeta" id="mmeta"></div>
+    <a class="mnav" id="mnav" href="#" target="_blank" rel="noopener">🧭 Naviga fino qui</a>
+    <div class="mge" id="mge"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// Elenco ufficiale delle stazioni BikeMi (feed pubblico GBFS, senza chiavi).
+const GBFS='https://gbfs.urbansharing.com/bikemi.com/station_information.json';
+// Indirizzo dello sprite del Pokémon numero n.
+const SPR=n=>'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/'+n+'.png';
+// Finché non lo catturi non sai chi è, come nel Pokédex vero: restano la silhouette
+// e la stella dei leggendari. Anche il numero si nasconde: per chi conosce i
+// Pokémon "#150" vale già come nome.
+const pkName=d=>d.v?d.pk:'???';
+const pkNum=d=>(LEG.has(d.n)?'★ ':'')+(d.v?'#'+String(d.n).padStart(3,'0'):'#???');
+// I 386 Pokémon delle prime tre generazioni, in ordine di numero: POK[n-1] è il numero n.
+const POK=["Bulbasaur","Ivysaur","Venusaur","Charmander","Charmeleon","Charizard","Squirtle","Wartortle","Blastoise","Caterpie","Metapod","Butterfree","Weedle","Kakuna","Beedrill","Pidgey","Pidgeotto","Pidgeot","Rattata","Raticate","Spearow","Fearow","Ekans","Arbok","Pikachu","Raichu","Sandshrew","Sandslash","Nidoran♀","Nidorina","Nidoqueen","Nidoran♂","Nidorino","Nidoking","Clefairy","Clefable","Vulpix","Ninetales","Jigglypuff","Wigglytuff","Zubat","Golbat","Oddish","Gloom","Vileplume","Paras","Parasect","Venonat","Venomoth","Diglett","Dugtrio","Meowth","Persian","Psyduck","Golduck","Mankey","Primeape","Growlithe","Arcanine","Poliwag","Poliwhirl","Poliwrath","Abra","Kadabra","Alakazam","Machop","Machoke","Machamp","Bellsprout","Weepinbell","Victreebel","Tentacool","Tentacruel","Geodude","Graveler","Golem","Ponyta","Rapidash","Slowpoke","Slowbro","Magnemite","Magneton","Farfetch'd","Doduo","Dodrio","Seel","Dewgong","Grimer","Muk","Shellder","Cloyster","Gastly","Haunter","Gengar","Onix","Drowzee","Hypno","Krabby","Kingler","Voltorb","Electrode","Exeggcute","Exeggutor","Cubone","Marowak","Hitmonlee","Hitmonchan","Lickitung","Koffing","Weezing","Rhyhorn","Rhydon","Chansey","Tangela","Kangaskhan","Horsea","Seadra","Goldeen","Seaking","Staryu","Starmie","Mr. Mime","Scyther","Jynx","Electabuzz","Magmar","Pinsir","Tauros","Magikarp","Gyarados","Lapras","Ditto","Eevee","Vaporeon","Jolteon","Flareon","Porygon","Omanyte","Omastar","Kabuto","Kabutops","Aerodactyl","Snorlax","Articuno","Zapdos","Moltres","Dratini","Dragonair","Dragonite","Mewtwo","Mew","Chikorita","Bayleef","Meganium","Cyndaquil","Quilava","Typhlosion","Totodile","Croconaw","Feraligatr","Sentret","Furret","Hoothoot","Noctowl","Ledyba","Ledian","Spinarak","Ariados","Crobat","Chinchou","Lanturn","Pichu","Cleffa","Igglybuff","Togepi","Togetic","Natu","Xatu","Mareep","Flaaffy","Ampharos","Bellossom","Marill","Azumarill","Sudowoodo","Politoed","Hoppip","Skiploom","Jumpluff","Aipom","Sunkern","Sunflora","Yanma","Wooper","Quagsire","Espeon","Umbreon","Murkrow","Slowking","Misdreavus","Unown","Wobbuffet","Girafarig","Pineco","Forretress","Dunsparce","Gligar","Steelix","Snubbull","Granbull","Qwilfish","Scizor","Shuckle","Heracross","Sneasel","Teddiursa","Ursaring","Slugma","Magcargo","Swinub","Piloswine","Corsola","Remoraid","Octillery","Delibird","Mantine","Skarmory","Houndour","Houndoom","Kingdra","Phanpy","Donphan","Porygon2","Stantler","Smeargle","Tyrogue","Hitmontop","Smoochum","Elekid","Magby","Miltank","Blissey","Raikou","Entei","Suicune","Larvitar","Pupitar","Tyranitar","Lugia","Ho-Oh","Celebi","Treecko","Grovyle","Sceptile","Torchic","Combusken","Blaziken","Mudkip","Marshtomp","Swampert","Poochyena","Mightyena","Zigzagoon","Linoone","Wurmple","Silcoon","Beautifly","Cascoon","Dustox","Lotad","Lombre","Ludicolo","Seedot","Nuzleaf","Shiftry","Taillow","Swellow","Wingull","Pelipper","Ralts","Kirlia","Gardevoir","Surskit","Masquerain","Shroomish","Breloom","Slakoth","Vigoroth","Slaking","Nincada","Ninjask","Shedinja","Whismur","Loudred","Exploud","Makuhita","Hariyama","Azurill","Nosepass","Skitty","Delcatty","Sableye","Mawile","Aron","Lairon","Aggron","Meditite","Medicham","Electrike","Manectric","Plusle","Minun","Volbeat","Illumise","Roselia","Gulpin","Swalot","Carvanha","Sharpedo","Wailmer","Wailord","Numel","Camerupt","Torkoal","Spoink","Grumpig","Spinda","Trapinch","Vibrava","Flygon","Cacnea","Cacturne","Swablu","Altaria","Zangoose","Seviper","Lunatone","Solrock","Barboach","Whiscash","Corphish","Crawdaunt","Baltoy","Claydol","Lileep","Cradily","Anorith","Armaldo","Feebas","Milotic","Castform","Kecleon","Shuppet","Banette","Duskull","Dusclops","Tropius","Chimecho","Absol","Wynaut","Snorunt","Glalie","Spheal","Sealeo","Walrein","Clamperl","Huntail","Gorebyss","Relicanth","Luvdisc","Bagon","Shelgon","Salamence","Beldum","Metang","Metagross","Regirock","Regice","Registeel","Latias","Latios","Kyogre","Groudon","Rayquaza","Jirachi","Deoxys"];
+
+// D: le stazioni, ognuna col suo Pokémon (id, nome, coordinate, n, pk, v = catturata…).
+// AG: gli aggregati delle corse (conteggi per stazione, date, record…).
+// filt, nFilt, mFilt: filtri attivi di Pokédex, Vicino e Mappa.
+let D=[], AG=null, filt='all', nFilt='M', mFilt='all';
+
+// Catture col GPS, tenute fuori dagli aggregati delle corse: passare vicino a una
+// stazione non prova di averci lasciato la bici. Il prossimo export le conferma.
+let GPS={};
+try{ GPS=JSON.parse(localStorage.getItem('bm_gps')||'{}')||{}; }catch(e){ GPS={}; }
+// Salva le catture GPS sul dispositivo.
+function saveGPS(){ try{ localStorage.setItem('bm_gps',JSON.stringify(GPS)); }catch(e){} }
+// Catturata: ci sei passato secondo il file, oppure il GPS ti ha visto lì.
+const caught=id=>!!((AG&&AG.vc&&AG.vc[id])||GPS[id]);
+// Catturata solo col GPS, in attesa che il prossimo export la confermi.
+const gpsOnly=id=>!!GPS[id]&&!(AG&&AG.vc&&AG.vc[id]);
+let mapDone=false, mapObj=null, layer=null, meMark=null;
+let heatOn=false, heatCv=null;
+try{ heatOn=localStorage.getItem('bm_heat')==='1'; }catch(e){}
+let myPos=null, nearList=[];
+
+// ═══ AVVIO ═══
+// All'apertura: registra il service worker e, se ci sono dati salvati, entra
+// subito nell'app senza chiedere di nuovo il file.
+window.addEventListener('load',()=>{
+  if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+  uploadTip();
+  try{
+    const d=localStorage.getItem('bm_d'), a=localStorage.getItem('bm_a');
+    if(d&&a){
+      AG=JSON.parse(a);              // prima di unpackD, che legge AG.vc
+      const rows=JSON.parse(d);
+      if(Array.isArray(rows)&&Array.isArray(rows[0])){ D=unpackD(rows); launch(); }
+    }
+  }catch(e){}
+});
+
+// ═══ CARICAMENTO DEL FILE ═══
+// Trascinamento del file sul riquadro (da computer) o scelta col selettore (da telefono).
+function dzOver(e){ e.preventDefault(); document.getElementById('dz').classList.add('over'); }
+function dzOut(){ document.getElementById('dz').classList.remove('over'); }
+function dzDrop(e){ e.preventDefault(); dzOut(); processFile(e.dataTransfer.files[0]); }
+function onFile(e){ processFile(e.target.files[0]); }
+
+// Estrae trips.json dallo zip di BikeMi e restituisce {text, data}: il contenuto e
+// la data dell'export. Lettore zip minimo, senza librerie: legge la directory
+// centrale in fondo al file (le sue dimensioni sono affidabili, quelle delle
+// intestazioni locali possono rimandare a un descrittore successivo) e
+// decomprime con DecompressionStream, già presente nel browser.
+async function tripsFromZip(file){
+  const buf=new Uint8Array(await file.arrayBuffer());
+  const dv=new DataView(buf.buffer);
+  let eocd=-1;
+  for(let i=buf.length-22;i>=Math.max(0,buf.length-66000);i--)
+    if(dv.getUint32(i,true)===0x06054b50){ eocd=i; break; }
+  if(eocd<0) throw new Error('Questo zip sembra danneggiato.');
+
+  const count=dv.getUint16(eocd+10,true);
+  let p=dv.getUint32(eocd+16,true);
+  const dec=new TextDecoder();
+  let hit=null, names=[];
+  for(let k=0;k<count;k++){
+    if(dv.getUint32(p,true)!==0x02014b50) break;
+    const nameLen=dv.getUint16(p+28,true);
+    const name=dec.decode(buf.subarray(p+46,p+46+nameLen));
+    names.push(name);
+    if(/(^|\/)trips\.json$/i.test(name))
+      hit={method:dv.getUint16(p+10,true),size:dv.getUint32(p+20,true),off:dv.getUint32(p+42,true),dos:dv.getUint16(p+14,true)};
+    p+=46+nameLen+dv.getUint16(p+30,true)+dv.getUint16(p+32,true);
+  }
+  if(!hit) throw new Error('Nello zip non trovo trips.json. Contiene: '+(names.join(', ')||'niente'));
+
+  const nl=dv.getUint16(hit.off+26,true), el=dv.getUint16(hit.off+28,true);
+  const start=hit.off+30+nl+el;
+  const raw=buf.subarray(start,start+hit.size);
+  const data=dosDate(hit.dos);
+  if(hit.method===0) return {text:dec.decode(raw),data};
+  if(hit.method!==8) throw new Error('Compressione dello zip non supportata: estrai trips.json e ricaricalo.');
+  if(typeof DecompressionStream==='undefined')
+    throw new Error('Questo browser non sa aprire gli zip: estrai trips.json e ricaricalo.');
+  const s=new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  return {text:dec.decode(await new Response(s).arrayBuffer()),data};
+}
+
+// La data che BikeMi ha scritto nello zip per trips.json, cioè quando ha generato
+// l'export. Formato DOS: giorno nei bit 0–4, mese 5–8, anno dal 1980 nei bit 9–15.
+function dosDate(v){
+  const g=v&31, m=(v>>5)&15, a=1980+(v>>9);
+  if(!g||!m||m>12||a<2000) return null;   // zip senza data valida
+  return a+'-'+String(m).padStart(2,'0')+'-'+String(g).padStart(2,'0');
+}
+
+// La Poké Ball oscilla per tutto il tempo del lavoro vero e si apre solo a dati
+// pronti. La durata minima serve solo a non farla sparire in un lampo quando la
+// connessione è veloce.
+const LOAD_FLOOR=1150;
+// Se il servizio dei percorsi non risponde, la tratta più lunga si stima dalla
+// linea d'aria. Su un percorso reale milanese il rapporto era 1,16: con 1,1 la
+// stima resta volutamente prudente.
+const ROAD_FACTOR=1.1;
+// Mostra, aggiorna e nasconde la Poké Ball di caricamento.
+function showLoad(){ document.getElementById('loader').className='on'; setLoad('Preparo la Poké Ball…'); }
+function setLoad(t){ document.getElementById('load-txt').textContent=t; }
+function hideLoad(){ document.getElementById('loader').className=''; }
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+
+// Dati pronti: la Poké Ball si apre, l'app compare e parte il lancio che scopre
+// le catture. t0: quando è iniziato il caricamento. extra: righe da aggiungere
+// all'avviso finale (nuovi Pokémon, catture GPS confermate o tolte). nuovi: i
+// Pokémon nuovi rispetto al caricamento precedente, null al primo.
+async function revealApp(t0,extra,nuovi){
+  // Con "riduci movimento" attivo niente animazione: si entra subito nell'app.
+  if(matchMedia('(prefers-reduced-motion: reduce)').matches){ launch(); hideLoad(); if(extra) toast(extra); return; }
+  await sleep(Math.max(0,LOAD_FLOOR-(Date.now()-t0)));
+  const c=D.filter(d=>d.v).length;
+  setLoad(c+' stazioni catturate su '+D.length+'!');
+  const l=document.getElementById('loader');
+  l.className='on opening';
+  await sleep(620);
+  launch();
+  prepareThrow();    // coperte prima che la Poké Ball sfumi, sennò si vedrebbero già scoperte
+  await sleep(200);
+  l.className='on opening gone';
+  await sleep(420);
+  hideLoad();
+  await throwBalls(extra,nuovi);
+}
+
+// Il cuore dell'app: legge il file caricato (zip o trips.json), riassume le corse
+// in aggregati, scarica l'elenco stazioni, assegna i Pokémon, salva e apre l'app.
+// Ogni errore finisce come messaggio leggibile sotto il riquadro di caricamento.
+async function processFile(f){
+  if(!f) return;
+  const err=document.getElementById('up-err');
+  err.style.display='none'; err.textContent='';
+  showLoad();
+  const t0=Date.now();
+  try{
+    const head=new Uint8Array(await f.slice(0,2).arrayBuffer());
+    const isZip = head[0]===0x50 && head[1]===0x4b;
+    setLoad(isZip ? 'Apro lo zip…' : 'Leggo il file…');
+    // Quando sono stati scaricati i dati: dallo zip la data scritta da BikeMi,
+    // da un trips.json la data del file sul dispositivo.
+    let text, scaricato=null;
+    if(isZip){ const z=await tripsFromZip(f); text=z.text; scaricato=z.data; }
+    else { text=await f.text(); if(f.lastModified) scaricato=localDayOf(f.lastModified); }
+
+    let trips;
+    try{ trips=JSON.parse(text); }
+    catch(e){ throw new Error('Questo file non è un JSON valido. Carica trips.json oppure lo zip scaricato da BikeMi.'); }
+    if(Array.isArray(trips)&&!trips.length)
+      throw new Error('Questo trips.json non contiene ancora nessuna corsa: dopo il primo giro scarica un export nuovo e riprova.');
+    if(!Array.isArray(trips)||!trips[0]._startStation)
+      throw new Error('Non riconosco questo file. Serve trips.json (o lo zip che lo contiene).');
+
+    // ── aggregati: si tiene solo quel che serve a schermo, mai i 700 KB grezzi ──
+    setLoad('Incrocio le tue corse…');
+    const vc={}, fv={}, byYear={}, byDay={}, byMonth={};
+    const byHour=new Array(24).fill(0), byDow=new Array(7).fill(0);
+    let sec=0, first=null, last=null, longest=null, farthest=null;
+    let totM=0, legs=0;
+    const days=[];
+    for(const t of trips){
+      const dur=t._tripDuration||0;
+      sec += dur;
+
+      // Distanza in linea d'aria tra le due stazioni. Il percorso vero è più lungo,
+      // e l'app lo dichiara invece di spacciarla per chilometri pedalati.
+      const sc=t._startStation&&t._startStation._coords, ec=t._endStation&&t._endStation._coords;
+      if(sc&&ec&&sc._latitude!=null&&ec._latitude!=null){
+        const m=haversine(sc._latitude,sc._longitude,ec._latitude,ec._longitude);
+        totM+=m; legs++;
+        if(m>0&&(!farthest||m>farthest.m))
+          farthest={m,sec:dur,at:t._tripStarted,from:t._startStation._title,to:t._endStation._title,
+                    c:[sc._latitude,sc._longitude,ec._latitude,ec._longitude]};
+      }
+      const ts=t._tripStarted;
+      if(ts){
+        if(!first||ts<first) first=ts;
+        if(!last||ts>last) last=ts;
+        byYear[ts.slice(0,4)]=(byYear[ts.slice(0,4)]||0)+1;
+        // Ora locale, non UTC: "a che ora pedali" ha senso solo nel fuso di chi pedala.
+        const d=new Date(ts);
+        byHour[d.getHours()]++;
+        byDow[d.getDay()]++;
+        const key=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+        byDay[key]=(byDay[key]||0)+1;
+        byMonth[key.slice(0,7)]=(byMonth[key.slice(0,7)]||0)+1;
+        days.push(key);
+      }
+      if(dur && (!longest||dur>longest.sec))
+        longest={sec:dur,at:ts,from:t._startStation&&t._startStation._title,to:t._endStation&&t._endStation._title};
+      for(const k of ['_startStation','_endStation']){
+        const id=t[k]&&t[k]._id; if(!id) continue;
+        vc[id]=(vc[id]||0)+1;
+        if(ts&&(!fv[id]||ts<fv[id])) fv[id]=ts;
+      }
+    }
+
+    // Parte subito, in parallelo al download dell'elenco stazioni: il percorso
+    // risponde in circa 250 ms, l'elenco in circa un secondo, quindi la distanza
+    // stradale vera non allunga l'attesa.
+    const roadP = farthest ? roadDistance(farthest) : Promise.resolve(null);
+
+    const pick=o=>Object.entries(o).sort((a,b)=>b[1]-a[1])[0]||null;
+    const busiestDay=pick(byDay), busiestMonth=pick(byMonth);
+
+    // La pausa più lunga, misurata tra giorni distinti in cui hai pedalato.
+    let gap=null;
+    const uniq=[...new Set(days)].sort();
+    for(let i=1;i<uniq.length;i++){
+      const dd=Math.round((new Date(uniq[i])-new Date(uniq[i-1]))/86400000);
+      if(!gap||dd>gap.days) gap={days:dd,from:uniq[i-1],to:uniq[i]};
+    }
+
+    AG={n:trips.length,sec,first,last,byYear,vc,fv,byHour,byDow,
+        m:totM,legs,
+        activeDays:uniq.length,
+        rec:{longest,farthest,
+             busiestDay:busiestDay?{date:busiestDay[0],n:busiestDay[1]}:null,
+             busiestMonth:busiestMonth?{ym:busiestMonth[0],n:busiestMonth[1]}:null,
+             gap}};
+    // L'export non può essere più vecchio della sua ultima corsa: se la data letta lo
+    // dice (file copiato, zip senza data), vale l'ultima corsa.
+    const ultima=last?localDayOf(last):null;
+    AG.exp = scaricato&&(!ultima||scaricato>=ultima) ? scaricato : ultima;
+
+    // Al ricaricamento vince il file: le catture GPS che ha anche lui diventano
+    // catture normali, tutte le altre spariscono. Le catture GPS servono solo a
+    // non dover riesportare a ogni giro, fino al prossimo export.
+    const confermate=Object.keys(GPS).filter(id=>vc[id]);
+    const tolte=Object.keys(GPS).filter(id=>!vc[id]);
+
+    setLoad('Scarico l\'elenco stazioni BikeMi…');
+    const gbfs=await fetch(GBFS).then(r=>{ if(!r.ok) throw new Error('Non riesco a scaricare l\'elenco stazioni BikeMi. Controlla la connessione.'); return r.json(); })
+      .catch(e=>{ throw e instanceof TypeError ? new Error('Non riesco a scaricare l\'elenco stazioni BikeMi. Controlla la connessione.') : e; });
+    const st=gbfs.data.stations;
+    // Le catture GPS si azzerano solo adesso, a elenco stazioni arrivato: se il
+    // caricamento si fermasse prima (niente rete), andrebbero perse senza che il
+    // file nuovo sia mai stato applicato.
+    GPS={}; saveGPS();
+    try{ localStorage.setItem('bm_chk',String(Date.now())); }catch(e){}
+    // Stazioni dove sei passato e che BikeMi ha poi chiuso: non si possono più
+    // catturare, e senza contarle sembrerebbero un buco inspiegabile.
+    const live=new Set(st.map(s=>s.station_id));
+    AG.gh=Object.keys(vc).filter(id=>!live.has(id)).length;
+    const map=assignPokemon(st);
+    D=st.map(s=>({
+      n:map[s.station_id], pk:POK[map[s.station_id]-1]||'#'+map[s.station_id],
+      id:s.station_id, nm:s.name, ad:s.address, la:s.lat, lo:s.lon,
+      v:caught(s.station_id)
+    })).sort((a,b)=>a.n-b.n);
+
+    // Per trovare la prima visita vera le date si confrontano complete; a schermo
+    // compare solo il giorno, quindi l'orario si toglie prima di salvare.
+    for(const k in fv) fv[k]=fv[k].slice(0,10);
+
+    const road=await roadP;
+    if(road&&farthest){ farthest.roadKm=road.km; farthest.roadMin=road.min; }
+
+    save();
+    // Nuove: catturate adesso e non prima del ↺. Senza un "prima" è il primo
+    // caricamento in assoluto, e lì sono tutte nuove: niente distinzione.
+    let prima=null;
+    try{ const p=localStorage.getItem('bm_prima'); if(p) prima=new Set(JSON.parse(p)); }catch(e){}
+    const nuovi=prima?D.filter(d=>d.v&&!prima.has(d.id)):null;
+    try{ localStorage.removeItem('bm_prima'); }catch(e){}
+
+    const parti=[];
+    if(nuovi&&nuovi.length) parti.push(pl(nuovi.length,'nuovo Pokémon','nuovi Pokémon'));
+    if(confermate.length) parti.push(pl(confermate.length,'cattura GPS confermata','catture GPS confermate'));
+    if(tolte.length) parti.push(pl(tolte.length,'tolta','tolte')+': nel file non c\'è');
+    await revealApp(t0,parti.join(' · '),nuovi);
+  }catch(e){
+    hideLoad();
+    err.textContent='⚠️ '+e.message; err.style.display='block';
+  }
+}
+
+// Restituisce l'associazione stazione → numero del Pokémon, salvata in bm_map.
+// Una stazione tiene il suo Pokémon anche quando BikeMi cambia l'elenco. I numeri
+// delle stazioni chiuse NON vengono riciclati: altrimenti un Pokémon che avevi
+// catturato tornerebbe non catturato su una stazione nuova che non c'entra niente.
+// Le assegnazioni ritirate restano salvate proprio per tenere occupato il numero.
+//
+// I 21 leggendari fino alla terza generazione vanno alle 21 stazioni più lontane
+// dal Duomo, dalla più remota in giù: catturarli costa davvero qualche chilometro.
+// Chi aveva già una mappa salvata riceve uno scambio una tantum, non un rimescolamento.
+const LEGEND=[150,151,249,250,384,382,383,251,385,386,144,145,146,243,244,245,380,381,377,378,379];
+const LEG=new Set(LEGEND);
+const CENTER=[45.4642,9.1900];
+function assignPokemon(stations){
+  let prev={};
+  try{ prev=JSON.parse(localStorage.getItem('bm_map')||'{}'); }catch(e){}
+  const map={...prev};
+  let legDone=false;
+  try{ legDone=localStorage.getItem('bm_leg')==='1'; }catch(e){}
+  if(!legDone){
+    const far=s=>haversine(CENTER[0],CENTER[1],s.lat,s.lon);
+    [...stations].sort((a,b)=>far(b)-far(a)).slice(0,LEGEND.length).forEach((s,i)=>{
+      const id=s.station_id, want=LEGEND[i];
+      if(map[id]===want) return;
+      const holder=Object.keys(map).find(k=>map[k]===want);
+      const old=map[id];
+      map[id]=want;
+      if(holder){ if(old!=null) map[holder]=old; else delete map[holder]; }
+    });
+    try{ localStorage.setItem('bm_leg','1'); }catch(e){}
+  }
+  // i numeri leggendari non vanno mai a una stazione qualsiasi
+  const used=new Set([...Object.values(map),...LEGEND]);
+  const num=s=>{ const m=/^(\d+)/.exec(s.name); return m?+m[1]:1e9; };
+  let next=1;
+  for(const s of [...stations].sort((a,b)=>num(a)-num(b))){
+    if(map[s.station_id]) continue;
+    while(used.has(next)) next++;
+    map[s.station_id]=next; used.add(next); next++;
+  }
+  try{ localStorage.setItem('bm_map',JSON.stringify(map)); }catch(e){}
+  return map;
+}
+
+// Le stazioni si salvano come righe di valori, non come oggetti: niente nomi di
+// campo ripetuti e niente campi ricalcolabili. Il nome del Pokémon si ricava dal
+// numero, "catturata" dai conteggi di visita, e cinque decimali di coordinate
+// sono già precisione al metro.
+const r5=x=>Math.round(x*1e5)/1e5;
+// D → righe compatte da salvare.
+function packD(){ return D.map(d=>[d.n,d.id,d.nm,d.ad,r5(d.la),r5(d.lo)]); }
+// Righe salvate → D, ricalcolando nome del Pokémon e stato di cattura.
+function unpackD(rows){
+  return rows.map(([n,id,nm,ad,la,lo])=>({n,pk:POK[n-1]||'#'+n,id,nm,ad,la,lo,v:caught(id)}));
+}
+
+// Salva stazioni e aggregati sul dispositivo.
+function save(){
+  try{
+    localStorage.setItem('bm_a',JSON.stringify(AG));
+    localStorage.setItem('bm_d',JSON.stringify(packD()));
+  }catch(e){ toast('Spazio esaurito: dati non salvati'); }
+}
+
+// Apre l'app: nasconde il caricamento e costruisce Pokédex e statistiche.
+function launch(){
+  document.getElementById('upload').style.display='none';
+  document.getElementById('app').style.display='flex';
+  updateProg(); buildGrid(); buildStats();
+  showInstall();
+  refreshStations();   // in sottofondo: non blocca l'apertura
+  startWatch();        // cattura col GPS, solo se il permesso c'è già
+}
+
+// Barra di avanzamento in alto: catturate su totale.
+function updateProg(){
+  const c=D.filter(d=>d.v).length;
+  document.getElementById('pf').style.width=(c/D.length*100)+'%';
+  document.getElementById('pl').textContent=c+'/'+D.length;
+}
+
+// Pulsante ↺: torna al caricamento per un export nuovo. Le associazioni Pokémon
+// e le catture GPS restano; corse e stazioni si rifanno dal file nuovo.
+function doReset(){
+  if(!confirm('Caricare un nuovo trips.json?\n(le associazioni Pokémon restano invariate)')) return;
+  // Le catture di adesso, comprese quelle GPS: col prossimo file si capirà quali sono nuove.
+  try{ localStorage.setItem('bm_prima',JSON.stringify(D.filter(d=>d.v).map(d=>d.id))); }catch(e){}
+  localStorage.removeItem('bm_d'); localStorage.removeItem('bm_a');
+  stopWatch(); hideGeoChip();
+  // Senza remove() Leaflet rifiuterebbe di ricreare la mappa nello stesso div.
+  if(mapObj) mapObj.remove();
+  D=[]; AG=null; mapDone=false; mapObj=null; layer=null; meMark=null; heatCv=null; myPos=null;
+  document.getElementById('app').style.display='none';
+  document.getElementById('upload').style.display='flex';
+  document.getElementById('fi').value='';
+  document.getElementById('grid').innerHTML='';
+}
+
+// BikeMi apre e chiude stazioni. L'elenco salvato invecchia, quindi va riletto:
+// senza questo, una stazione nuova non comparirebbe mai e il "100% completato"
+// diventerebbe falso. Le corse non si ricaricano: basta ricostruire l'elenco
+// riusando i conteggi di visita già calcolati.
+const STATION_TTL=12*3600*1000;
+
+// Ricontrolla l'elenco stazioni (al massimo ogni 12 ore) e, se BikeMi ne ha
+// aperte o chiuse, ricostruisce D e lo segnala con un avviso.
+async function refreshStations(){
+  if(!AG||!AG.vc) return;
+  let last=0;
+  try{ last=+(localStorage.getItem('bm_chk')||0); }catch(e){}
+  if(Date.now()-last<STATION_TTL) return;
+
+  let st;
+  try{
+    const r=await fetch(GBFS);
+    if(!r.ok) return;
+    st=(await r.json()).data.stations;
+    if(!Array.isArray(st)||!st.length) return;
+  }catch(e){ return; }   // offline o feed giù: si tiene l'elenco in cache
+  try{ localStorage.setItem('bm_chk',String(Date.now())); }catch(e){}
+
+  const prima=new Set(D.map(d=>d.id)), dopo=new Set(st.map(s=>s.station_id));
+  const nuove=[...dopo].filter(id=>!prima.has(id));
+  const chiuse=[...prima].filter(id=>!dopo.has(id));
+  if(!nuove.length&&!chiuse.length) return;
+
+  const map=assignPokemon(st);
+  D=st.map(s=>({n:map[s.station_id],pk:POK[map[s.station_id]-1]||'#'+map[s.station_id],
+    id:s.station_id,nm:s.name,ad:s.address,la:s.lat,lo:s.lon,
+    v:caught(s.station_id)})).sort((a,b)=>a.n-b.n);
+  AG.gh=Object.keys(AG.vc).filter(id=>!dopo.has(id)).length;
+  save();
+
+  updateProg(); buildGrid(); buildStats();
+  if(layer) drawMarkers();
+  if(myPos) renderNear();
+
+  const parti=[];
+  if(nuove.length) parti.push(pl(nuove.length,'stazione nuova','stazioni nuove'));
+  if(chiuse.length) parti.push(pl(chiuse.length,'stazione chiusa','stazioni chiuse'));
+  toast('BikeMi: '+parti.join(', '));
+}
+
+// ═══ POKÉDEX ═══
+// Disegna tutte le schede del Pokédex; il tocco su una scheda apre il dettaglio.
+function buildGrid(){
+  const g=document.getElementById('grid');
+  g.innerHTML=D.map((d,i)=>
+    '<div class="card '+(d.v?'C':'M')+(gpsOnly(d.id)?' G':'')+(LEG.has(d.n)?' L':'')+'" data-i="'+i+'">'+
+    '<div class="pn">'+pkNum(d)+'</div><div class="cbg">✓</div>'+
+    '<img src="'+SPR(d.n)+'" loading="lazy" alt="'+esc(pkName(d))+'">'+
+    '<div class="pk">'+esc(pkName(d))+'</div><div class="sn">'+esc(d.nm)+'</div></div>'
+  ).join('');
+  g.onclick=e=>{ const c=e.target.closest('.card'); if(c) openM(D[c.dataset.i]); };
+  applyFilter();
+}
+// Filtro del Pokédex: 'all' tutte, 'C' catturate, 'M' mancanti.
+function setF(f){
+  filt=f;
+  document.querySelectorAll('#tab-pok .ch').forEach(b=>b.classList.remove('on'));
+  document.querySelector('#tab-pok .ch-'+(f==='all'?'a':f==='C'?'c':'m')).classList.add('on');
+  applyFilter();
+}
+// Mostra solo le schede che rispettano filtro e ricerca, e aggiorna il conteggio.
+function applyFilter(){
+  const q=document.getElementById('srch').value.trim().toLowerCase();
+  let n=0;
+  document.querySelectorAll('#grid .card').forEach(c=>{
+    const d=D[c.dataset.i];
+    const okF = filt==='all' || (filt==='C')===d.v;
+    // il nome del Pokémon si cerca solo tra i catturati, altrimenti la ricerca lo svelerebbe
+    const okQ = !q || d.nm.toLowerCase().includes(q) || (d.v && d.pk.toLowerCase().includes(q));
+    const show = okF&&okQ;
+    c.style.display = show?'':'none';
+    if(show) n++;
+  });
+  document.getElementById('cnt').textContent=n+' di '+D.length;
+  document.getElementById('grid-empty').textContent = n ? '' :
+    q ? 'Nessuna stazione trovata per "'+q+'".'
+      : filt==='M' ? '🏆 Le hai catturate tutte e '+D.length+'. Non manca niente.'
+      : filt==='C' ? 'Non hai ancora catturato nessuna stazione.'
+      : '';
+}
+
+// ═══ VICINO ═══
+// Distanza in metri tra due punti (lat, lon), lungo la superficie terrestre.
+function haversine(a1,o1,a2,o2){
+  const R=6371000,p=Math.PI/180;
+  const dA=(a2-a1)*p, dO=(o2-o1)*p;
+  const h=Math.sin(dA/2)**2+Math.cos(a1*p)*Math.cos(a2*p)*Math.sin(dO/2)**2;
+  return 2*R*Math.asin(Math.sqrt(h));
+}
+
+// Concessa la posizione, il browser smette di chiedere, ma deve smettere anche
+// l'app: il permesso concesso si ricorda (bm_geo) e si riusa in silenzio.
+function geoOk(){ try{ return localStorage.getItem('bm_geo')==='1'; }catch(e){ return false; } }
+
+// All'apertura di Vicino: cerca la posizione da sola se il permesso c'è già,
+// altrimenti aspetta che tu tocchi "Usa la mia posizione".
+async function autoLocate(){
+  if(myPos||!navigator.geolocation) return;
+  if(geoOk()){ locate(true); return; }
+  if(navigator.permissions&&navigator.permissions.query){
+    try{
+      const p=await navigator.permissions.query({name:'geolocation'});
+      if(p.state==='granted') locate(true);
+    }catch(e){}
+  }
+}
+
+// Chiede la posizione attuale e riempie Vicino. silent: nessun messaggio di
+// errore, per le richieste partite da sole e non da un tocco.
+function locate(silent){
+  const err=document.getElementById('near-err');
+  err.style.display='none';
+  if(location.protocol==='file:'){
+    if(!silent){ err.textContent='⚠️ La geolocalizzazione richiede HTTPS. Pubblica l\'app (es. su Netlify) e aprila da lì.'; err.style.display='block'; }
+    return;
+  }
+  if(!navigator.geolocation){
+    if(!silent){ err.textContent='⚠️ Questo browser non supporta la geolocalizzazione.'; err.style.display='block'; }
+    return;
+  }
+  if(!silent) toast('Cerco la tua posizione…');
+  navigator.geolocation.getCurrentPosition(p=>{
+    myPos=[p.coords.latitude,p.coords.longitude];
+    try{ localStorage.setItem('bm_geo','1'); }catch(e){}
+    document.getElementById('geo-ask').style.display='none';
+    document.getElementById('near-body').style.display='block';
+    renderNear();
+    if(mapObj) locateOnMap();
+    startWatch(true);   // permesso appena concesso: da qui la cattura col GPS è attiva
+  },e=>{
+    // Negato: si dimentica, altrimenti ogni apertura riproverebbe un permesso che non arriverà.
+    if(e.code===1){ try{ localStorage.removeItem('bm_geo'); }catch(_){} }
+    if(silent) return;
+    err.textContent = e.code===1
+      ? '⚠️ Permesso negato. Abilita la posizione per questo sito nelle impostazioni del browser.'
+      : '⚠️ Posizione non disponibile. Riprova all\'aperto o controlla il GPS.';
+    err.style.display='block';
+  },{enableHighAccuracy:true,timeout:10000,maximumAge:120000});
+}
+
+// Filtro di Vicino: 'M' solo da catturare, 'all' tutte.
+function setNF(f){
+  nFilt=f;
+  document.querySelectorAll('#near-body .ch').forEach(b=>b.classList.remove('on'));
+  document.querySelector('#near-body .ch-'+(f==='all'?'a':'m')).classList.add('on');
+  renderNear();
+}
+
+// Lista delle 40 stazioni più vicine alla tua posizione, con distanza e minuti a
+// piedi (80 metri al minuto).
+function renderNear(){
+  if(!myPos) return;
+  nearList=D.map(d=>({...d,dm:haversine(myPos[0],myPos[1],d.la,d.lo)})).sort((a,b)=>a.dm-b.dm);
+  const list=(nFilt==='M'?nearList.filter(d=>!d.v):nearList).slice(0,40);
+  document.getElementById('near-cnt').textContent=list.length?'più vicine':'';
+  document.getElementById('near-list').innerHTML = list.length
+    ? list.map(d=>
+      '<div class="nr '+(d.v?'C':'M')+'" data-id="'+d.id+'">'+
+      '<img src="'+SPR(d.n)+'" loading="lazy" alt="">'+
+      '<div class="nri"><div class="nrp">'+esc(pkName(d))+'</div><div class="nrs">'+esc(d.nm)+'</div></div>'+
+      '<div class="nrd"><div class="nrdm">'+fmtD(d.dm)+'</div><div class="nrdt">'+Math.max(1,Math.round(d.dm/80))+' min</div></div></div>'
+    ).join('')
+    : '<div class="geo-box"><div class="gi">🏆</div><div class="gt">Hai catturato tutte le stazioni raggiungibili. Complimenti!</div></div>';
+  document.getElementById('near-list').onclick=e=>{
+    const r=e.target.closest('.nr'); if(r) openM(D.find(x=>x.id===r.dataset.id));
+  };
+}
+// Metri → "2,4 km" con un decimale.
+function km1(m){ return (m/1000).toLocaleString('it-IT',{minimumFractionDigits:1,maximumFractionDigits:1})+' km'; }
+// Metri → "350 m" sotto il chilometro, "2,4 km" sopra.
+function fmtD(m){ return m<1000 ? Math.round(m)+' m' : km1(m); }
+
+// Propone la tratta: una corsa sola fra due stazioni. Con BikeMi la bici si
+// lascia in stazione, quindi un giro a più tappe vorrebbe dire noleggiarla da
+// capo a ogni fermata. Si ritira nella stazione più vicina a te e si lascia in
+// una da catturare a circa targetM metri.
+function planLeg(targetM){
+  if(!myPos) return null;
+  let from=null;
+  for(const d of D){
+    const w=haversine(myPos[0],myPos[1],d.la,d.lo);
+    if(!from||w<from.w) from={d,w};
+  }
+  if(!from) return null;
+  let to=null;
+  for(const d of D){
+    if(d.v||d.id===from.d.id) continue;
+    const leg=haversine(from.d.la,from.d.lo,d.la,d.lo);
+    const off=Math.abs(leg-targetM);
+    if(!to||off<to.off) to={d,leg,off};
+  }
+  return to ? {from:from.d,walk:from.w,to:to.d,leg:to.leg} : null;
+}
+
+// Pulsanti ~2/4/6 km: mostra la tratta proposta e la apre in Google Maps in bici.
+function buildRide(targetKm){
+  const el=document.getElementById('ride-plan');
+  if(!myPos){ toast('Serve prima la posizione'); return; }
+  const p=planLeg(targetKm*1000);
+  if(!p){ el.textContent='Nessuna stazione nuova disponibile.'; return; }
+  el.innerHTML='<b>Ritira</b> '+esc(p.from.nm)+' <span class="rp-d">('+fmtD(p.walk)+' da te)</span><br>'+
+    '<b>Lascia</b> '+esc(p.to.nm)+(LEG.has(p.to.n)?' <span class="rp-d">(★ leggendario)</span>':'')+'<br>'+
+    '<span class="rp-d">Tratta di '+km1(p.leg)+' in linea d\'aria</span>';
+  window.open('https://www.google.com/maps/dir/?api=1&travelmode=bicycling'
+    +'&origin='+p.from.la+','+p.from.lo
+    +'&destination='+p.to.la+','+p.to.lo,'_blank','noopener');
+}
+
+// ═══ MAPPA ═══
+// Crea la mappa la prima volta che apri la scheda (Leaflet su un div nascosto
+// calcolerebbe dimensioni sbagliate, da qui il breve ritardo).
+function initMap(){
+  if(mapDone) return; mapDone=true;
+  syncHeatBtn();
+  setTimeout(()=>{
+    mapObj=L.map('map',{zoomControl:false}).setView([45.4654,9.1859],13);
+    L.control.zoom({position:'bottomright'}).addTo(mapObj);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+      {attribution:'© OpenStreetMap',maxZoom:19}).addTo(mapObj);
+    const hp=mapObj.createPane('heat'); hp.classList.add('leaflet-heat-pane'); hp.style.zIndex=350;
+    // Durante lo zoom animato il disegno resterebbe alla scala vecchia: meglio sparire un attimo.
+    mapObj.on('zoomstart',()=>{ if(heatCv) heatCv.style.display='none'; });
+    mapObj.on('moveend zoomend resize',drawHeat);
+    layer=L.layerGroup().addTo(mapObj);
+    drawMarkers();
+    mapObj.invalidateSize();
+    if(myPos) locateOnMap();
+  },100);
+}
+// Ridisegna i pallini delle stazioni secondo il filtro, ognuno col suo fumetto
+// e il link "Naviga fino qui", poi la heatmap.
+function drawMarkers(){
+  if(!layer) return;
+  layer.clearLayers();
+  let n=0;
+  for(const d of D){
+    if(mFilt!=='all' && (mFilt==='C')!==d.v) continue;
+    n++;
+    // Con la heatmap accesa le catturate quasi spariscono (il verde lo fa già la
+    // heatmap) ma restano toccabili; le grigie restano: sono quelle da fare.
+    L.circleMarker([d.la,d.lo],heatOn&&d.v?{
+      radius:3, color:'#dcfce7', fillColor:'#dcfce7', opacity:.3, fillOpacity:.25, weight:1
+    }:{
+      radius:d.v?7:5, color:d.v?'#4ade80':'#94a3b8',
+      fillColor:d.v?'#22c55e':'#475569', fillOpacity:d.v?.9:.45, weight:2
+    }).addTo(layer).bindPopup(
+      '<b>'+esc(d.nm)+'</b><br>'+pkNum(d)+' '+esc(pkName(d))+'<br>'+
+      (gpsOnly(d.id)?'<span style="color:#93c5fd">📍 Catturata col GPS</span>'
+      :d.v?'<span style="color:#4ade80">✔ Catturata'+(AG.vc[d.id]?' · '+pl(AG.vc[d.id],'passaggio','passaggi'):'')+'</span>'
+          :'<span style="color:#94a3b8">Non visitata</span>')+
+      '<br><a class="pnav" href="https://www.google.com/maps/dir/?api=1&travelmode=bicycling&destination='+d.la+','+d.lo+'" target="_blank" rel="noopener">🧭 Naviga fino qui</a>'
+    );
+  }
+  document.getElementById('map-empty').textContent = n ? '' :
+    mFilt==='M' ? '🏆 Nessuna stazione da fare: le hai catturate tutte.'
+                : 'Non hai ancora catturato nessuna stazione.';
+  drawHeat();
+}
+
+// ═══ HEATMAP ═══
+// Ogni stazione pesa quanto i suoi passaggi (partenze + arrivi). La radice
+// quadrata evita che la stazione di casa, con centinaia di passaggi, spenga tutte
+// le altre. Le macchie si sommano, così due stazioni vicine fanno una zona più
+// intensa; poi ogni pixel prende il verde della tavolozza, chiaro e trasparente
+// dove passi poco, scuro dove passi spesso. Sotto, la mappa diventa grigio
+// chiaro: sul fondo scuro il verde scuro non si vedrebbe.
+// HEAT_RADIUS_M: raggio di una macchia. HEAT_THRESHOLD: sotto questa intensità non
+// si colora. HEAT_ALPHA_MAX: opacità massima. HEAT_BANDS: fasce delle curve di
+// livello. HEAT_TERRACING: quanto il colore si appiattisce sulla sua fascia (0–1).
+const HEAT_RADIUS_M=560, HEAT_THRESHOLD=.12, HEAT_ALPHA_MAX=.88, HEAT_BANDS=5, HEAT_TERRACING=.4;
+let heatPal=null;
+// I 256 colori della heatmap, dal verde chiaro al verde scuro, calcolati una volta.
+function heatPalette(){
+  if(heatPal) return heatPal;
+  const c=document.createElement('canvas'); c.width=256; c.height=1;
+  const g=c.getContext('2d'), gr=g.createLinearGradient(0,0,256,0);
+  [[0,'#bbf7d0'],[.35,'#4ade80'],[.7,'#16a34a'],[1,'#14532d']].forEach(([o,col])=>gr.addColorStop(o,col));
+  g.fillStyle=gr; g.fillRect(0,0,256,1);
+  return heatPal=g.getImageData(0,0,256,1).data;
+}
+// Le stazioni con almeno un passaggio: [lat, lon, passaggi], e il massimo.
+function heatPoints(){
+  const pt=[]; let max=0;
+  for(const d of D){ const n=AG&&AG.vc[d.id]; if(n>0){ pt.push([d.la,d.lo,n]); if(n>max) max=n; } }
+  return {pt,max};
+}
+// Ridisegna la heatmap sull'area inquadrata. Si richiama a ogni spostamento o
+// zoom della mappa, quindi deve restare veloce (circa un decimo di secondo).
+function drawHeat(){
+  if(!mapObj) return;
+  const leg=document.getElementById('heat-leg');
+  if(!heatOn){ if(heatCv) heatCv.style.display='none'; leg.classList.remove('on'); mapObj.getContainer().classList.remove('heat'); return; }
+  const {pt}=heatPoints();
+  leg.classList.toggle('on',pt.length>0);
+  mapObj.getContainer().classList.toggle('heat',pt.length>0);
+  const size=mapObj.getSize();
+  if(!heatCv){ heatCv=document.createElement('canvas'); mapObj.getPane('heat').appendChild(heatCv); }
+  heatCv.style.display='';
+  if(!size.x||!size.y) return;
+  heatCv.width=size.x; heatCv.height=size.y;
+  // Il pane si sposta col trascinamento: il canvas va rimesso sull'angolo visibile.
+  L.DomUtil.setPosition(heatCv,mapObj.containerPointToLayerPoint([0,0]));
+  const g=heatCv.getContext('2d');
+  g.clearRect(0,0,size.x,size.y);
+  if(!pt.length) return;
+  // Raggio in metri, non in pixel: la macchia copre la stessa zona a ogni zoom.
+  const mpp=156543.03*Math.cos(45.46*Math.PI/180)/Math.pow(2,mapObj.getZoom());
+  const r=Math.max(12,Math.min(220,Math.round(HEAT_RADIUS_M/mpp)));
+  // Densità calcolata a mano in numeri decimali: sommando macchie su un canvas
+  // i valori bassi si arrotondano a 8 bit e le curve esterne vengono seghettate.
+  // Macchia a campana, non a cono: le zone si fondono senza spigoli.
+  const W=size.x, H=size.y, N=W*H, den=new Float32Array(N);
+  const ker=new Float32Array((2*r+1)*(2*r+1));
+  for(let dy=-r;dy<=r;dy++) for(let dx=-r;dx<=r;dx++){
+    const u2=(dx*dx+dy*dy)/(r*r);
+    ker[(dy+r)*(2*r+1)+dx+r]=u2<1?Math.exp(-3.5*u2)*(1-u2):0;
+  }
+  for(const [la,lo,n] of pt){
+    const p=mapObj.latLngToContainerPoint([la,lo]), cx=Math.round(p.x), cy=Math.round(p.y);
+    if(cx<-r||cy<-r||cx>W+r||cy>H+r) continue;
+    const w=Math.sqrt(n);
+    const y0=Math.max(0,cy-r), y1=Math.min(H-1,cy+r), x0=Math.max(0,cx-r), x1=Math.min(W-1,cx+r);
+    for(let y=y0;y<=y1;y++){
+      const kr=(y-cy+r)*(2*r+1)-cx+r, dr=y*W;
+      for(let x=x0;x<=x1;x++) den[dr+x]+=w*ker[kr+x];
+    }
+  }
+  // Si normalizza sul punto più intenso dello schermo: a ogni zoom la zona
+  // più frequentata in vista è verde pieno.
+  let dmax=0; for(let p=0;p<N;p++) if(den[p]>dmax) dmax=den[p];
+  if(!dmax) return;
+  const img=g.createImageData(W,H), px=img.data, tav=heatPalette();
+  // Mezzo sfumata e mezzo curve di livello: ogni pixel sta in una delle
+  // HEAT_BANDS fasce, il colore si avvicina un po' a quello della sua fascia
+  // (gradoni morbidi) e sul confine fra due fasce passa una linea sottile.
+  const tv=new Float32Array(N), lv=new Uint8Array(N), passo=(1-HEAT_THRESHOLD)/HEAT_BANDS;
+  for(let p=0;p<N;p++){
+    if(!den[p]) continue;
+    const t=Math.pow(den[p]/dmax,.55); tv[p]=t;
+    if(t>=HEAT_THRESHOLD) lv[p]=1+Math.min(HEAT_BANDS-1,Math.floor((t-HEAT_THRESHOLD)/passo));
+  }
+  for(let p=0;p<N;p++){
+    const i=p*4, q=lv[p];
+    if(!q){ px[i+3]=0; continue; }
+    const t=tv[p], centro=HEAT_THRESHOLD+(q-.5)*passo, t2=t*(1-HEAT_TERRACING)+centro*HEAT_TERRACING;
+    const x=p%W, bordo=(x+1<W&&lv[p+1]<q)||(x>0&&lv[p-1]<q)||(p+W<N&&lv[p+W]<q)||(p>=W&&lv[p-W]<q);
+    if(bordo){
+      // linea un po' più scura del verde della fascia; quella esterna più leggera
+      const j=Math.min(255,Math.round((t2+.18)*255))*4;
+      px[i]=tav[j]; px[i+1]=tav[j+1]; px[i+2]=tav[j+2];
+      px[i+3]=Math.round(255*(q===1?.35:.8));
+      continue;
+    }
+    const j=Math.round(t2*255)*4;
+    px[i]=tav[j]; px[i+1]=tav[j+1]; px[i+2]=tav[j+2];
+    // Bordo sfumato sulla soglia, poi trasparenza che cala con l'intensità.
+    px[i+3]=Math.round(255*Math.min(HEAT_ALPHA_MAX,.25+.7*t2)*Math.min(1,(t-HEAT_THRESHOLD)*6));
+  }
+  g.putImageData(img,0,0);
+}
+// Pulsante 🔥: accende o spegne la heatmap e ricorda la scelta.
+function toggleHeat(){
+  heatOn=!heatOn;
+  try{ localStorage.setItem('bm_heat',heatOn?'1':'0'); }catch(e){}
+  syncHeatBtn();
+  if(heatOn && !heatPoints().pt.length) toast('Nessun passaggio nel file: la heatmap si accende con le prime corse.');
+  drawMarkers();
+}
+// Allinea l'aspetto del pulsante 🔥 allo stato della heatmap.
+function syncHeatBtn(){
+  const b=document.getElementById('heat-btn');
+  b.classList.toggle('on',heatOn); b.setAttribute('aria-pressed',heatOn);
+}
+// Filtro della mappa: 'all' tutte, 'C' catturate, 'M' da fare.
+function setMF(f){
+  mFilt=f;
+  document.querySelectorAll('#tab-mappa .ch').forEach(b=>b.classList.remove('on'));
+  document.querySelector('#tab-mappa .ch-'+(f==='all'?'a':f==='C'?'c':'m')).classList.add('on');
+  drawMarkers();
+}
+// Pulsante 📍 della mappa: centra la mappa su di te. Senza posizione passa a
+// Vicino, dove la si chiede.
+function locateOnMap(){
+  if(!myPos){ goTab('near'); if(!geoOk()) locate(); return; }
+  if(!mapObj) return;
+  if(meMark) mapObj.removeLayer(meMark);
+  meMark=L.circleMarker(myPos,{radius:8,color:'#fff',fillColor:'#3b82f6',fillOpacity:1,weight:3})
+    .addTo(mapObj).bindPopup('Sei qui');
+  mapObj.setView(myPos,15);
+}
+
+// ═══ DETTAGLIO DI UNA STAZIONE ═══
+// Apre il pannello dal basso con Pokémon, stato di cattura, passaggi, data della
+// prima cattura, distanza da te e link per navigare fino alla stazione.
+function openM(d){
+  if(!d) return;
+  const m=document.getElementById('mdl');
+  m.className=d.v?'C':'M';
+  document.getElementById('mn').textContent=pkNum(d);
+  document.getElementById('mimg').src=SPR(d.n);
+  document.getElementById('mpk').textContent=pkName(d);
+  document.getElementById('mlg').textContent=LEG.has(d.n)?'★ LEGGENDARIO':'';
+  const g=gpsOnly(d.id);
+  const b=document.getElementById('mbd');
+  b.className='mbd '+(g?'G':d.v?'C':'M');
+  b.textContent=g?'📍 Catturata col GPS':d.v?'✔ Stazione catturata!':'? Non ancora visitata';
+  document.getElementById('mst').textContent=d.nm;
+  document.getElementById('mad').textContent=d.ad;
+
+  const meta=[];
+  if(g) meta.push(['mmv sm',fmtDate(GPS[d.id]),'col GPS il']);
+  else if(d.v){
+    meta.push(['mmv',AG.vc[d.id]||0,'passaggi']);
+    if(AG.fv[d.id]) meta.push(['mmv sm',fmtDate(AG.fv[d.id]),'catturata il']);
+  }
+  if(myPos) meta.push(['mmv',fmtD(haversine(myPos[0],myPos[1],d.la,d.lo)),'da te']);
+  document.getElementById('mmeta').innerHTML=meta.map(([c,v,l])=>
+    '<div class="mm"><div class="'+c+'">'+v+'</div><div class="mml">'+l+'</div></div>').join('');
+
+  document.getElementById('mnav').href='https://www.google.com/maps/dir/?api=1&travelmode=bicycling&destination='+d.la+','+d.lo;
+  document.getElementById('mge').textContent=!d.v?'Raggiungi la stazione per scoprire chi è'
+    :d.n<=151?'Generazione I':d.n<=251?'Generazione II':'Generazione III';
+  document.getElementById('mbg').classList.add('open');
+}
+// Chiude il dettaglio: tocco fuori dal pannello o tasto Esc.
+function closeM(){ document.getElementById('mbg').classList.remove('open'); }
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeM(); });
+
+// ═══ STATISTICHE ═══
+// Riempie la scheda Stats: collezione, tempo e distanza, note sui dati, corse per
+// anno, orari, record, generazioni e stazioni preferite.
+// Le percentuali si arrotondano per difetto: con 319 stazioni su 320 l'arrotondamento
+// normale scriverebbe "100%" mentre ne manca ancora una.
+function buildStats(){
+  const c=D.filter(d=>d.v).length, tot=D.length;
+  set('s0',c); set('s1',Math.floor(c/tot*100)+'%'); set('s2',tot-c); set('s3',AG.n);
+  set('s4',Math.floor(AG.sec/3600)+'h '+Math.floor((AG.sec%3600)/60)+"'");
+  set('s5',(AG.n?Math.round(AG.sec/AG.n/60):0)+"'");
+  set('s6',AG.first?fmtDate(AG.first):'–');
+  set('s7',AG.last?fmtDate(AG.last):'–');
+
+  // La distanza può essere 0 se ogni corsa è partita e finita nella stessa
+  // stazione: un riquadro "0 km" non dice niente, quindi si nasconde.
+  const hasKm = AG.m>0 && AG.legs>0;
+  document.getElementById('sc-km').style.display = hasKm?'':'none';
+  document.getElementById('sc-avgkm').style.display = hasKm?'':'none';
+  if(hasKm){
+    set('s8',Math.round(AG.m/1000).toLocaleString('it-IT')+' km');
+    set('s9',km1(AG.m/AG.legs));
+    document.getElementById('km-note').textContent=
+      'Le distanze sono in linea d\'aria tra le stazioni, quindi sono un minimo: pedalando su strada i chilometri reali sono più alti.';
+  } else document.getElementById('km-note').textContent='';
+  const note=[];
+  if(AG.exp) note.push('📅 Dati aggiornati al '+fmtDate(AG.exp)+': le corse successive arrivano con il prossimo export.');
+  const nGps=D.filter(d=>gpsOnly(d.id)).length;
+  if(nGps) note.push('📍 '+pl(nGps,'catturata','catturate')+' col GPS, in attesa di conferma dal prossimo export.');
+  if(AG.gh) note.push('ℹ️ Hai usato altre '+AG.gh+(AG.gh===1?' stazione che BikeMi ha dismesso':' stazioni che BikeMi ha dismesso')+': non compaiono nel Pokédex perché non esistono più.');
+  document.getElementById('ghost').innerHTML=note.join('<br>');
+
+  const yrs=Object.keys(AG.byYear).sort();
+  const maxY=Math.max(...yrs.map(y=>AG.byYear[y]),1);
+  document.getElementById('years').innerHTML=yrs.map(y=>
+    '<div class="row"><span class="rl">'+y+'</span><div class="rbw"><div class="rbf b2" style="width:'+
+    Math.round(AG.byYear[y]/maxY*100)+'%"></div></div><span class="rp b2">'+AG.byYear[y]+'</span></div>').join('');
+
+  buildWhen(); buildRecords();
+
+  const gens=[['Gen I',1,151],['Gen II',152,251],['Gen III',252,386]];
+  document.getElementById('gens').innerHTML=gens.map(([l,a,z])=>{
+    const inR=D.filter(d=>d.n>=a&&d.n<=z), got=inR.filter(d=>d.v).length;
+    const p=inR.length?Math.floor(got/inR.length*100):0;
+    return '<div class="row"><span class="rl">'+l+' ('+got+'/'+inR.length+')</span><div class="rbw"><div class="rbf" style="width:'+
+      p+'%"></div></div><span class="rp">'+p+'%</span></div>';
+  }).join('');
+  const lg=D.filter(d=>LEG.has(d.n)), lgOk=lg.filter(d=>d.v).length;
+  if(lg.length){
+    const p=Math.floor(lgOk/lg.length*100);
+    document.getElementById('gens').innerHTML+='<div class="row"><span class="rl" style="color:#ffcb05">★ Leggendari ('+lgOk+'/'+lg.length+')</span>'+
+      '<div class="rbw"><div class="rbf" style="width:'+p+'%;background:#ffcb05"></div></div><span class="rp" style="color:#ffcb05">'+p+'%</span></div>';
+  }
+
+  // Solo stazioni ancora attive: di una dismessa qui non c'è il nome, e un numero
+  // nudo tra le "preferite" non direbbe niente a nessuno.
+  const live=new Set(D.map(d=>d.id));
+  const top=Object.entries(AG.vc).filter(([id])=>live.has(id)).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  const med=['🥇','🥈','🥉','4.','5.'];
+  document.getElementById('tops').innerHTML = top.length ? top.map(([id,n],i)=>{
+    const d=D.find(x=>x.id===id);
+    return '<div class="ts"><span class="tr">'+med[i]+'</span><div class="ti"><div class="tn">'+
+      esc(d.nm)+'</div><div class="tc">'+pl(n,'passaggio','passaggi')+' · <span class="tpk">'+esc(d.pk)+
+      '</span></div></div></div>';
+  }).join('') : '<div class="note">Nessuna delle stazioni che hai usato è ancora attiva.</div>';
+}
+
+// ═══ QUANDO PEDALI ═══
+const DOW=['dom','lun','mar','mer','gio','ven','sab'];
+const DOWL=['D','L','M','M','G','V','S'];
+
+// Grafici "A che ora pedali" e "In che giorni", con ora e giorno preferiti.
+function buildWhen(){
+  // I dati salvati da una versione vecchia non hanno ore e giorni: meglio
+  // nascondere i grafici che mostrarli vuoti.
+  const has = Array.isArray(AG.byHour) && AG.byHour.length===24 && Array.isArray(AG.byDow) && AG.byDow.length===7;
+  document.getElementById('sec-hr').style.display = has?'':'none';
+  document.getElementById('sec-dw').style.display = has?'':'none';
+  if(!has) return;
+
+  const h=AG.byHour, mh=Math.max(...h,1), ph=h.indexOf(mh);
+  document.getElementById('hrs').innerHTML=h.map((v,i)=>
+    '<div class="hr'+(i===ph?' max':'')+'" style="height:'+Math.max(2,v/mh*100)+'%" title="'+String(i).padStart(2,'0')+':00 — '+v+' corse"></div>').join('');
+  document.getElementById('peak-hr').innerHTML='Ora preferita: <b>'+String(ph).padStart(2,'0')+':00</b> · '+pl(mh,'corsa','corse');
+
+  // A schermo si parte dal lunedì, ma AG.byDow parte dalla domenica come Date.getDay().
+  const d=AG.byDow, md=Math.max(...d,1);
+  const order=[1,2,3,4,5,6,0];
+  const pd=d.indexOf(md);
+  document.getElementById('dows').innerHTML=order.map(i=>
+    '<div class="dw'+(i===pd?' max':'')+'"><div class="dwb"><div class="dwf" style="height:'+Math.max(2,d[i]/md*100)+'%"></div></div>'+
+    '<div class="dwl">'+DOWL[i]+'</div></div>').join('');
+  document.getElementById('peak-dw').innerHTML='Giorno preferito: <b class="b2">'+DOW[pd]+'</b> · '+pl(md,'corsa','corse');
+}
+
+// ═══ RECORD ═══
+// Record personali: tratta più lunga (su strada, se il percorso è disponibile),
+// corsa più lunga, giorno e mese più intensi, giorni attivi e pausa più lunga.
+function buildRecords(){
+  const r=AG.rec||{}, out=[];
+  const row=(icon,label,value,sub)=>
+    '<div class="rc"><span class="rci">'+icon+'</span><div class="rcb"><div class="rct">'+label+
+    '</div><div class="rcv">'+value+'</div>'+(sub?'<div class="rcs">'+esc(sub)+'</div>':'')+'</div></div>';
+
+  const dur=s=>{ const m=Math.floor(s/60); return m>=60?Math.floor(m/60)+'h '+(m%60)+"'":m+" min"; };
+
+  if(r.farthest){
+    const f=r.farthest, road=f.roadKm!=null;
+    out.push('<div class="rc"><span class="rci">📏</span><div class="rcb">'+
+      '<div class="rct">Tratta più lunga</div>'+
+      '<div class="rcv">'+(road?km1(f.roadKm*1000)+' su strada':'≈ '+km1(f.m*ROAD_FACTOR)+' su strada')+' · '+dur(f.sec)+'</div>'+
+      '<div class="rcs">'+esc((f.from||'?')+' → '+(f.to||'?')+' · '+fmtDate(f.at))+'</div>'+
+      '<div class="rcs">'+(road
+        ? 'Percorso ciclabile su OpenStreetMap, stimato in '+f.roadMin+"'"
+        : 'Stima da '+km1(f.m)+' in linea d\'aria: percorso non disponibile')+'</div>'+
+      '</div></div>');
+  }
+
+  if(r.longest)
+    out.push(row('⏱️','Più tempo in una sola corsa',dur(r.longest.sec),
+      (r.longest.from||'?')+' → '+(r.longest.to||'nessun arrivo')+' · '+fmtDate(r.longest.at)));
+  if(r.busiestDay)
+    out.push(row('🔥','Giorno più intenso',pl(r.busiestDay.n,'corsa','corse'),fmtDate(r.busiestDay.date)));
+  if(r.busiestMonth){
+    const [y,mo]=r.busiestMonth.ym.split('-');
+    const nm=new Date(+y,+mo-1,1).toLocaleDateString('it-IT',{month:'long',year:'numeric'});
+    out.push(row('📅','Mese più attivo',pl(r.busiestMonth.n,'corsa','corse'),nm));
+  }
+  if(AG.activeDays){
+    const span=Math.round((new Date(AG.last)-new Date(AG.first))/86400000);
+    out.push(row('🚲','Giorni in cui hai pedalato',pl(AG.activeDays,'giorno','giorni'),
+      span>0 ? 'su '+pl(span,'giorno','giorni')+' dalla prima corsa' : null));
+  }
+  if(r.gap&&r.gap.days>1)
+    out.push(row('😴','Pausa più lunga',pl(r.gap.days,'giorno','giorni'),fmtDate(r.gap.from)+' → '+fmtDate(r.gap.to)));
+
+  document.getElementById('recs').innerHTML=out.join('')||'<div class="note">Servono più corse per calcolare i record.</div>';
+}
+
+// Distanza ciclabile vera della sola tratta più lunga, dal servizio Valhalla di
+// FOSSGIS (senza chiavi). Una richiesta per caricamento, e il risultato si salva.
+// Non blocca mai: se è lento o giù entro 4 secondi, resta la stima in linea d'aria.
+async function roadDistance(f){
+  if(!f||!f.c) return null;
+  const ctl=new AbortController();
+  const timer=setTimeout(()=>ctl.abort(),4000);
+  try{
+    const q={locations:[{lat:f.c[0],lon:f.c[1]},{lat:f.c[2],lon:f.c[3]}],costing:'bicycle',units:'kilometers'};
+    const res=await fetch('https://valhalla1.openstreetmap.de/route?json='+encodeURIComponent(JSON.stringify(q)),{signal:ctl.signal});
+    if(!res.ok) return null;
+    const s=(await res.json()).trip?.summary;
+    return s&&s.length ? {km:s.length,min:Math.round(s.time/60)} : null;
+  }catch(e){ return null; }
+  finally{ clearTimeout(timer); }
+}
+
+// ═══ INSTALLAZIONE ═══
+// Chi apre il link non ha modo di sapere che l'app si può tenere sul telefono.
+// Su Android/Chrome basta un tocco tramite beforeinstallprompt; su iOS quell'API
+// non esiste, quindi servono le istruzioni vere.
+let installEvt=null;
+
+// L'evento arriva dopo il caricamento della pagina, quindi entrambi gli inviti
+// vanno ridisegnati quando si presenta.
+window.addEventListener('beforeinstallprompt',e=>{ e.preventDefault(); installEvt=e; showInstall(); uploadTip(); });
+window.addEventListener('appinstalled',()=>{ installEvt=null; hideInstall(); uploadTip(); });
+
+const isStandalone=()=>matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
+// iPad dichiara un user agent da Mac desktop dal 2019: si distingue solo dal
+// fatto che ha un touch screen. navigator.platform è deprecato, quindi controllo
+// anche la stringa, per non restare senza riconoscimento quando sparirà.
+const isIOS=()=>/iphone|ipad|ipod/i.test(navigator.userAgent)
+  ||((/macintosh/i.test(navigator.userAgent)||navigator.platform==='MacIntel')&&navigator.maxTouchPoints>1);
+// Su iPhone i browser diversi da Safari sono WebKit travestito: l'user agent dice
+// iPhone, ma le istruzioni della condivisione non sono le stesse.
+const isIOSOtherBrowser=()=>isIOS()&&/crios|fxios|edgios|opr\/|opt\//i.test(navigator.userAgent);
+const isAndroid=()=>/android/i.test(navigator.userAgent);
+// L'invito a installare è stato chiuso col ✕: non va più mostrato.
+function instHidden(){ try{ return localStorage.getItem('bm_inst')==='0'; }catch(e){ return false; } }
+
+// Nasconde la barra dell'invito, senza ricordare la scelta.
+function hideInstall(){ document.getElementById('install').style.display='none'; }
+
+// Barra in basso che invita a installare l'app, col testo giusto per il dispositivo.
+function showInstall(){
+  if(isStandalone()||instHidden()) return;
+  const bar=document.getElementById('install'), txt=document.getElementById('inst-txt'), btn=document.getElementById('inst-btn');
+  if(installEvt){
+    txt.innerHTML = (isIOS()||isAndroid())
+      ? 'Tieni <b>BikeMi Pokédex</b> sul telefono, si apre come un\'app'
+      : 'Installa <b>BikeMi Pokédex</b>, si apre come un\'app';
+    btn.style.display='';
+  }else if(isIOSOtherBrowser()){
+    txt.innerHTML='Per tenerla sul telefono apri questo indirizzo in <b>Safari</b>, poi Condividi → Aggiungi alla schermata Home';
+    btn.style.display='none';
+  }else if(isIOS()){
+    txt.innerHTML='Per averla sul telefono: tocca <b>Condividi</b> in basso, poi <b>Aggiungi alla schermata Home</b>';
+    btn.style.display='none';
+  }else if(isAndroid()){
+    txt.innerHTML='Per averla sul telefono: menu <b>⋮</b> del browser, poi <b>Aggiungi alla schermata Home</b>';
+    btn.style.display='none';
+  }else return;   // su desktop non serve insistere
+  bar.style.display='flex';
+}
+
+// Non installa: apre il foglio di condivisione di iOS, dove sta la voce
+// "Aggiungi alla schermata Home". È l'unico avvicinamento possibile su iPhone.
+async function iosShare(){
+  if(!navigator.share){ toast('Usa il pulsante Condividi nella barra del browser'); return; }
+  try{ await navigator.share({title:'BikeMi Pokédex',url:location.href}); }
+  catch(e){ if(e.name!=='AbortError') toast('Usa il pulsante Condividi nella barra del browser'); }
+}
+
+// Pulsante "Installa" (Android e Chrome): mostra la finestra di installazione del browser.
+async function doInstall(){
+  if(!installEvt) return;
+  installEvt.prompt();
+  let res={};
+  try{ res=await installEvt.userChoice; }catch(e){}
+  installEvt=null; hideInstall(); uploadTip();
+  if(res.outcome!=='accepted') toast('Puoi installarla più tardi dal menu del browser');
+}
+
+// ✕ sull'invito: chiuso per sempre.
+function dismissInstall(){
+  try{ localStorage.setItem('bm_inst','0'); }catch(e){}
+  hideInstall();
+}
+
+// Va detto sulla schermata iniziale, non solo dopo: chi apre il link non sa che
+// si può installare, e su iOS l'app aggiunta alla Home può tenere un archivio
+// separato da Safari, quindi installare prima evita di ricaricare il file due volte.
+function uploadTip(){
+  const el=document.getElementById('inst-tip');
+  if(!el) return;
+  const mobile=isIOS()||isAndroid();
+  const titolo='<div class="ic-t">📲 Tienila sul telefono</div>';
+  if(isStandalone()) el.innerHTML='';
+  else if(installEvt)
+    el.innerHTML='<div class="ic-t">📲 '+(mobile?'Tienila sul telefono':'Installa l\'app')+'</div>'+
+      '<div class="ic-b">Si apre come un\'app'+(mobile?' dalla schermata Home':'')+', e funziona anche senza connessione.</div>'+
+      '<button class="ic-btn" onclick="doInstall()">'+(mobile?'Aggiungi alla schermata Home':'Installa')+'</button>';
+  else if(isIOSOtherBrowser())
+    el.innerHTML=titolo+'<div class="ic-b">Su iPhone l\'aggiunta alla schermata Home funziona da <b>Safari</b>: apri questo indirizzo in Safari, poi Condividi → <b>Aggiungi alla schermata Home</b>.</div>';
+  else if(isIOS())
+    // iOS non espone alcuna API per aggiungere alla Home: il massimo possibile è
+    // aprire il menu Condividi, dove la voce si trova. Il resto lo fa l'utente.
+    el.innerHTML=titolo+'<div class="ic-b">Conviene farlo <b>prima</b> di caricare il file.</div>'+
+      '<button class="ic-btn" onclick="iosShare()">Apri il menu Condividi</button>'+
+      '<div class="ic-b" style="margin-top:9px">Poi scegli <b>Aggiungi alla schermata Home</b>.</div>';
+  else if(isAndroid())
+    el.innerHTML=titolo+'<div class="ic-b">Apri il menu <b>⋮</b> del browser e scegli <b>Aggiungi alla schermata Home</b>.</div>';
+  else
+    // Dispositivo non riconosciuto: nessun passaggio preciso da promettere,
+    // meglio dire dove cercare che lasciare la schermata muta.
+    el.innerHTML='<div class="ic-t">📲 Puoi tenerla sul telefono</div>'+
+      '<div class="ic-b">Aprendola da cellulare puoi aggiungerla alla <b>schermata Home</b> e usarla come un\'app. Cerca l\'opzione nel menu del browser.</div>';
+}
+
+// ═══ CATTURA COL GPS ═══
+// Con l'app aperta la posizione viene seguita: vicino a una stazione nuova
+// compare il radar, entro CATCH_RADIUS parte la cattura. Una web app non può
+// leggere la posizione a schermo spento, quindi tutto questo vale solo ad app aperta.
+const CATCH_RADIUS=40;      // m: una stazione occupa una ventina di metri di marciapiede
+const CATCH_MAX_ACC=60;     // m: oltre, il GPS è troppo vago per decidere
+const RADAR_RADIUS=250;     // m
+// watchId: il GPS in ascolto. radarId: la stazione mostrata dal radar.
+// catching: una scheda di cattura è aperta. throwing: è in corso il lancio dopo
+// il caricamento. Negli ultimi due casi il GPS non apre catture sopra.
+let watchId=null, radarId=null, catching=false, throwing=false;
+
+// Una data o un istante → "AAAA-MM-GG" nel fuso del telefono; localDay è oggi.
+function localDayOf(x){ const d=new Date(x); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function localDay(){ return localDayOf(Date.now()); }
+
+// Cosa dice il telefono adesso: 'granted', 'prompt', 'denied', o 'unknown' se il
+// browser non lo sa dire. Conta questo, non il nostro ricordo di una volta.
+async function geoState(){
+  if(navigator.permissions&&navigator.permissions.query){
+    try{ return (await navigator.permissions.query({name:'geolocation'})).state; }catch(e){}
+  }
+  return 'unknown';
+}
+
+// All'avvio il GPS parte da solo solo se non farà comparire un popup. Su iPhone
+// l'app sulla Home può dimenticare il permesso tra un'apertura e l'altra, e non c'è
+// modo di impedirlo dall'app: lì, invece di un popup a sorpresa a ogni avvio,
+// compare un pulsante, e il popup arriva solo quando lo tocchi.
+async function startWatch(daTocco){
+  if(watchId!=null||!navigator.geolocation||!D.length||document.hidden) return;
+  if(!daTocco){
+    const s=await geoState();
+    if(s==='denied') return;
+    const silenzioso = s==='granted' || (s==='unknown' && geoOk() && !isIOS());
+    if(!silenzioso){ if(geoOk()) showGeoChip(); return; }
+  }
+  hideGeoChip();
+  if(watchId!=null) return;
+  watchId=navigator.geolocation.watchPosition(onPos,e=>{
+    if(e.code===1){ try{ localStorage.removeItem('bm_geo'); }catch(_){} stopWatch(); }
+  },{enableHighAccuracy:true,maximumAge:10000,timeout:30000});
+}
+// Smette di seguire la posizione e nasconde il radar.
+function stopWatch(){
+  if(watchId!=null){ navigator.geolocation.clearWatch(watchId); watchId=null; }
+  hideRadar();
+}
+// Pulsante "Attiva la cattura GPS", per quando il GPS non può partire da solo.
+function showGeoChip(){ if(watchId==null) document.getElementById('geochip').classList.add('on'); }
+function hideGeoChip(){ document.getElementById('geochip').classList.remove('on'); }
+
+// Altrove il GPS si ferma in secondo piano per la batteria. Su iPhone no: iOS
+// sospende già da solo le app in background, e ogni ripartenza può riproporre il popup.
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){ if(isIOS()) hideRadar(); else stopWatch(); }
+  else startWatch();
+});
+
+// A ogni nuova posizione: aggiorna Vicino, cerca la stazione non catturata più
+// vicina e, a seconda della distanza, mostra il radar o fa partire la cattura.
+function onPos(p){
+  try{ localStorage.setItem('bm_geo','1'); }catch(e){}
+  const prev=myPos;
+  myPos=[p.coords.latitude,p.coords.longitude];
+  if(!prev){
+    document.getElementById('geo-ask').style.display='none';
+    document.getElementById('near-body').style.display='block';
+  }
+  if(curTab==='near'&&(!prev||haversine(prev[0],prev[1],myPos[0],myPos[1])>25)) renderNear();
+  if(catching||throwing) return;
+
+  let best=null;
+  for(const d of D){
+    if(d.v) continue;
+    const m=haversine(myPos[0],myPos[1],d.la,d.lo);
+    if(!best||m<best.m) best={d,m};
+  }
+  if(!best){ hideRadar(); return; }
+  const acc=p.coords.accuracy||999;
+  if(best.m<=CATCH_RADIUS&&acc<=CATCH_MAX_ACC){ catchStation(best.d); return; }
+  if(best.m<=RADAR_RADIUS) showRadar(best.d,best.m); else hideRadar();
+}
+
+// Radar in basso: "Pokémon selvatico!" con la distanza; la Poké Ball oscilla più
+// in fretta man mano che ti avvicini. Toccandolo si apre il dettaglio della stazione.
+function showRadar(d,m){
+  radarId=d.id;
+  document.querySelector('#radar .r-t1').textContent=LEG.has(d.n)?'★ Pokémon leggendario!':'Pokémon selvatico!';
+  document.getElementById('radar-txt').innerHTML='stazione nuova a <b>'+fmtD(m)+'</b>';
+  // più sei vicino, più la Poké Ball si agita
+  document.querySelector('#radar .mini').style.animationDuration=(0.4+Math.min(1,m/RADAR_RADIUS)*1.2).toFixed(2)+'s';
+  document.getElementById('radar').classList.add('on');
+}
+function hideRadar(){ const r=document.getElementById('radar'); if(r) r.classList.remove('on'); radarId=null; }
+function openRadar(){ const d=D.find(x=>x.id===radarId); if(d) openM(d); }
+
+// Cattura col GPS: la salva subito (bm_gps), aggiorna tutte le schede e avvia
+// l'animazione.
+function catchStation(d){
+  if(caught(d.id)) return;
+  catching=true;
+  GPS[d.id]=localDay(); saveGPS();
+  d.v=true;
+  hideRadar(); closeM();
+  updateProg(); buildGrid(); buildStats();
+  if(layer) drawMarkers();
+  if(myPos&&curTab==='near') renderNear();
+  playCatch(d);
+}
+
+// Animazione della cattura: la Poké Ball cade, oscilla tre volte, scatta con le
+// stelle e si apre la scheda del Pokémon.
+async function playCatch(d){
+  const el=document.getElementById('catch'), img=document.getElementById('c-img');
+  const msg=t=>{ document.getElementById('c-msg').textContent=t; };
+  img.classList.remove('lit');
+  img.src=SPR(d.n); img.alt=d.pk;
+  document.getElementById('c-n').textContent='#'+String(d.n).padStart(3,'0');
+  document.getElementById('c-pk').textContent='Hai catturato '+d.pk+'!';
+  document.querySelector('#catch .c-hd').textContent=LEG.has(d.n)?'★ Preso! È leggendario ★':'Preso!';
+  document.getElementById('c-st').textContent=d.nm;
+  const c=D.filter(x=>x.v).length;
+  document.getElementById('c-meta').textContent='Catturata col GPS · '+fmtDate(GPS[d.id]||localDay())+' · '+c+'/'+D.length;
+
+  if(!matchMedia('(prefers-reduced-motion: reduce)').matches){
+    el.className='on drop'; msg('Una stazione nuova! Lancio la Poké Ball…');
+    await sleep(650);
+    el.className='on shake'; msg('…');
+    await sleep(2450);
+    el.className='on click'; msg('');
+    if(navigator.vibrate) navigator.vibrate([40,60,140]);
+    await sleep(1050);   // il tempo di far finire il volo delle stelle
+  }
+  el.className='on reveal';
+  await sleep(60);
+  img.classList.add('lit');
+}
+
+// ═══ LANCIO DOPO IL CARICAMENTO ═══
+// A ogni caricamento il Pokédex si riempie davanti a te: le schede catturate
+// partono coperte e le Poké Ball ne scoprono alcune nelle prime quattro schermate,
+// scorrendo fra l'una e l'altra; poi tutte le altre si scoprono insieme. La durata,
+// circa 7 secondi, dipende da quante schermate, non da quante catture hai.
+const THROW_SCREENS=4, BALLS_PER_SCREEN=6, THROW_STAGGER=110, THROW_DURATION=650;
+
+// Prima del lancio: Pokédex in cima, senza filtri, con le catturate coperte.
+function prepareThrow(){
+  setF('all');
+  document.getElementById('srch').value=''; applyFilter();
+  goTab('pok');
+  document.getElementById('tab-pok').scrollTop=0;
+  document.querySelectorAll('#grid .card.C').forEach(c=>c.classList.add('pend'));
+}
+
+// Il piccolo lampo nel punto in cui la Poké Ball colpisce la scheda.
+function hitFlash(x,y){
+  const h=document.createElement('div');
+  h.className='hit'; h.style.setProperty('--at','translate('+(x-11)+'px,'+(y-11)+'px)');
+  document.body.appendChild(h);
+  setTimeout(()=>h.remove(),480);
+}
+
+// Scopre una scheda coperta, con un piccolo rimbalzo.
+function revealCard(c){
+  c.classList.remove('pend'); c.classList.add('pop');
+  setTimeout(()=>c.classList.remove('pop'),650);
+}
+
+// Lancia una Poké Ball dal punto da={x,y} alla scheda c, ad arco; all'arrivo la
+// scheda si scopre. La promessa si risolve quando la palla è arrivata.
+function throwBall(c,da){
+  return new Promise(fatto=>{
+    const r=c.getBoundingClientRect(), x=r.left+r.width/2, y=r.top+r.height*0.42;
+    const midX=(da.x+x)/2+(Math.random()*60-30), midY=Math.min(da.y,y)-90-Math.random()*60;
+    const b=document.createElement('div'); b.className='fly'; document.body.appendChild(b);
+    const a=b.animate([
+      {transform:'translate('+(da.x-13)+'px,'+(da.y-13)+'px) rotate(0deg) scale(1.1)'},
+      {transform:'translate('+(midX-13)+'px,'+(midY-13)+'px) rotate(380deg) scale(1)',offset:.55},
+      {transform:'translate('+(x-13)+'px,'+(y-13)+'px) rotate(720deg) scale(.75)'}
+    ],{duration:THROW_DURATION,easing:'cubic-bezier(.35,.1,.45,1)',fill:'forwards'});
+    let finito=false;
+    const arrivo=()=>{ if(finito) return; finito=true; b.remove(); hitFlash(x,y); revealCard(c); fatto(); };
+    a.onfinish=arrivo;
+    // Se il browser non fa avanzare l'animazione (app in secondo piano) la scheda si scopre comunque.
+    setTimeout(arrivo,THROW_DURATION+900);
+  });
+}
+
+// Le schede ancora coperte dentro lo schermo, sotto la barra di ricerca.
+function visibleCovered(tab){
+  const tr=tab.getBoundingClientRect(), barra=(tab.querySelector('.bar')||{offsetHeight:0}).offsetHeight;
+  return [...tab.querySelectorAll('#grid .card.pend')].filter(c=>{
+    const r=c.getBoundingClientRect(); return r.top>=tr.top+barra-10&&r.bottom<=tr.bottom+10; });
+}
+
+// Fino a 15 Pokémon nuovi ognuno ha la sua scheda grande; oltre, li si privilegia nel lancio.
+const NEW_ONE_BY_ONE=15;
+
+const cardOf=d=>document.querySelector('#grid .card[data-i="'+D.indexOf(d)+'"]');
+
+// Scorre il Pokédex. Se lo scorrimento fluido non parte (browser in secondo piano,
+// impostazioni di sistema) va in un colpo solo: non si salta mai una schermata.
+async function scrollTabTo(tab,top){
+  top=Math.max(0,Math.min(top,tab.scrollHeight-tab.clientHeight));
+  if(Math.abs(tab.scrollTop-top)<=10) return false;
+  tab.scrollTo({top,behavior:'smooth'});
+  await sleep(600);
+  // Lo scorrimento morbido a volte si ferma a un pixel dall'arrivo: si completa a mano.
+  if(Math.abs(tab.scrollTop-top)>.5){ tab.scrollTop=top; await sleep(80); }
+  return true;
+}
+
+// Al primo caricamento gli sprite possono non essere ancora arrivati: si aspetta
+// che le schede da scoprire li abbiano, altrimenti la ball rivelerebbe una scheda vuota.
+async function waitSprites(schede){
+  const s=schede.map(c=>c.querySelector('img')).filter(i=>i&&!i.complete);
+  if(s.length) await Promise.race([Promise.all(s.map(i=>new Promise(r=>{ i.addEventListener('load',r,{once:true}); i.addEventListener('error',r,{once:true}); }))),sleep(1500)]);
+}
+
+// Mescola un array sul posto (Fisher–Yates) e lo restituisce.
+function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+
+// Una schermata del lancio: fino a BALLS_PER_SCREEN Poké Ball verso schede coperte
+// visibili, prima le prioritarie (i Pokémon nuovi), poi a caso.
+async function throwScreen(tab,da,prioritari){
+  const qui=visibleCovered(tab);
+  // prima i Pokémon nuovi presenti sullo schermo, poi altri a caso
+  const nuoviQui=prioritari?qui.filter(c=>prioritari.has(c)):[];
+  const scelte=[...nuoviQui,...shuffle(qui.filter(c=>!nuoviQui.includes(c)))].slice(0,BALLS_PER_SCREEN);
+  if(!scelte.length) return;
+  await waitSprites(scelte);
+  await Promise.all(scelte.map((c,i)=>sleep(i*THROW_STAGGER).then(()=>throwBall(c,da))));
+}
+
+// Pochi nuovi: il Pokédex scorre fino a ognuno, la ball lo colpisce e si apre la scheda.
+// Ritorna true se dalla scheda hai scelto "Vedi nel Pokédex".
+async function revealNew(tab,da,lista){
+  for(let i=0;i<lista.length;i++){
+    const c=cardOf(lista[i]); if(!c) continue;
+    const tr=tab.getBoundingClientRect(), r=c.getBoundingClientRect();
+    await scrollTabTo(tab, tab.scrollTop+(r.top-tr.top)-tab.clientHeight/2+r.height/2);
+    await waitSprites([c]);
+    await throwBall(c,da);
+    await sleep(250);
+    if(await showNewCard(lista[i], i<lista.length-1)) return true;
+  }
+  return false;
+}
+
+// Scheda grande di un Pokémon nuovo arrivato col file. altri: ce ne sono ancora
+// dopo questo (i pulsanti diventano "Avanti" e "Salta gli altri"). La promessa si
+// risolve alla chiusura: true se hai scelto di saltare gli altri.
+let closeNewCard=null;
+function showNewCard(d,altri){
+  const img=document.getElementById('c-img');
+  img.classList.remove('lit'); img.src=SPR(d.n); img.alt=d.pk;
+  document.getElementById('c-n').textContent='#'+String(d.n).padStart(3,'0');
+  document.getElementById('c-pk').textContent='Hai catturato '+d.pk+'!';
+  document.getElementById('c-st').textContent=d.nm;
+  const primo=AG.fv&&AG.fv[d.id];
+  document.getElementById('c-meta').textContent='Nuovo nel file'+(primo?' · primo passaggio il '+fmtDate(primo):'')+
+    ' · '+D.filter(x=>x.v).length+'/'+D.length;
+  document.querySelector('#catch .c-hd').textContent=LEG.has(d.n)?'★ Nuovo leggendario! ★':'Nuovo Pokémon!';
+  document.querySelector('#catch .c-b2').textContent=altri?'Avanti':'Fantastico!';
+  document.querySelector('#catch .c-b1').textContent=altri?'Salta gli altri':'Vedi nel Pokédex';
+  catching=true;   // intanto il GPS non apre una cattura sopra questa
+  document.getElementById('catch').className='on reveal';
+  setTimeout(()=>img.classList.add('lit'),60);
+  return new Promise(r=>{ closeNewCard=r; });
+}
+
+// Il lancio dopo il caricamento. Con pochi Pokémon nuovi (fino a NEW_ONE_BY_ONE)
+// apre una scheda per ciascuno; altrimenti lancia Poké Ball nelle prime THROW_SCREENS
+// schermate. Alla fine scopre tutto, torna in cima e mostra il riepilogo.
+async function throwBalls(extra,nuovi){
+  const tutte=[...document.querySelectorAll('#grid .card.pend')];
+  if(!tutte.length){ if(extra) toast(extra); return; }
+  throwing=true;
+  try{ await runThrow(tutte,extra,nuovi); }
+  finally{ throwing=false; }
+}
+// Il lancio vero e proprio; throwBalls() gli mette attorno il segnale "throwing".
+async function runThrow(tutte,extra,nuovi){
+  const tab=document.getElementById('tab-pok');
+  const da={x:innerWidth/2, y:innerHeight-(document.getElementById('nav').offsetHeight||56)-24};
+  if(nuovi&&nuovi.length&&nuovi.length<=NEW_ONE_BY_ONE){
+    await revealNew(tab,da,nuovi);   // "Salta gli altri" interrompe: il resto si scopre qui sotto
+  } else {
+    const prioritari=nuovi&&nuovi.length?new Set(nuovi.map(cardOf).filter(Boolean)):null;
+    for(let s=0;s<THROW_SCREENS;s++){
+      if(s>0&&!(await scrollTabTo(tab,tab.scrollTop+tab.clientHeight*0.8))) break;   // il Pokédex è finito
+      await throwScreen(tab,da,prioritari);
+    }
+  }
+  tutte.filter(c=>c.classList.contains('pend')).forEach(revealCard);
+  if(tab.scrollTop>0){ await sleep(350); await scrollTabTo(tab,0); }
+  toast('Pokédex pronto: '+D.filter(d=>d.v).length+' catturati su '+D.length+(extra?' · '+extra:''));
+}
+
+// Chiude la scheda di cattura. toPokedex: "Vedi nel Pokédex" (o "Salta gli altri"
+// durante la sequenza dei nuovi).
+function closeCatch(toPokedex){
+  document.getElementById('catch').className='';
+  document.querySelector('#catch .c-b2').textContent='Fantastico!';
+  document.querySelector('#catch .c-b1').textContent='Vedi nel Pokédex';
+  catching=false;
+  // durante la sequenza dei nuovi il seguito lo decide throwBalls()
+  if(closeNewCard){ const r=closeNewCard; closeNewCard=null; r(!!toPokedex); return; }
+  if(toPokedex){ goTab('pok'); setF('C'); }
+}
+
+// ═══ CONDIVIDI ═══
+// Pulsante ↗: condivide il tuo punteggio col link dell'app; senza condivisione
+// di sistema lo copia negli appunti.
+async function doShare(){
+  const c=D.filter(d=>d.v).length;
+  const txt='🚲 Ho catturato '+c+'/'+D.length+' stazioni BikeMi a Milano ('+Math.floor(c/D.length*100)+'%)! Scopri le tue:';
+  const url=location.href;
+  if(navigator.share){
+    try{ await navigator.share({title:'BikeMi Pokédex',text:txt,url}); return; }catch(e){ if(e.name==='AbortError') return; }
+  }
+  try{ await navigator.clipboard.writeText(txt+' '+url); toast('Copiato negli appunti'); }
+  catch(e){ toast('Condivisione non disponibile'); }
+}
+
+// ═══ SCHEDE E UTILITÀ ═══
+const TABS=['stats','pok','mappa','near'];
+let curTab='stats';
+
+// Passa alla scheda t; la mappa si crea e Vicino cerca la posizione solo quando li apri.
+function goTab(t){
+  if(!TABS.includes(t)) return;
+  curTab=t;
+  for(const k of TABS){
+    document.getElementById('tab-'+k).classList.toggle('on',k===t);
+    document.getElementById('nb-'+k).classList.toggle('on',k===t);
+  }
+  if(t==='mappa'){ initMap(); if(mapObj) setTimeout(()=>mapObj.invalidateSize(),50); }
+  if(t==='near') autoLocate();
+}
+
+// Scheda successiva (d=1) o precedente (d=-1), senza girare in tondo.
+function stepTab(d){
+  const i=TABS.indexOf(curTab)+d;
+  if(i>=0&&i<TABS.length) goTab(TABS[i]);
+}
+
+// Lo scorrimento orizzontale col dito cambia scheda. Non sulla mappa, che usa il
+// trascinamento per spostarsi: lì ci sono le frecce ai bordi.
+(function(){
+  let x0=0,y0=0,live=false;
+  const el=document.getElementById('content');
+  el.addEventListener('touchstart',e=>{
+    if(e.touches.length!==1||document.getElementById('mbg').classList.contains('open')||e.target.closest('#map')){ live=false; return; }
+    x0=e.touches[0].clientX; y0=e.touches[0].clientY; live=true;
+  },{passive:true});
+  el.addEventListener('touchend',e=>{
+    if(!live) return; live=false;
+    const dx=e.changedTouches[0].clientX-x0, dy=e.changedTouches[0].clientY-y0;
+    if(Math.abs(dx)<55||Math.abs(dx)<Math.abs(dy)*1.4) return;
+    stepTab(dx<0?1:-1);
+  },{passive:true});
+})();
+// Scrive un testo nell'elemento con quell'id.
+function set(id,v){ document.getElementById(id).textContent=v; }
+// Singolare o plurale: pl(1,'corsa','corse') → "1 corsa", pl(3,…) → "3 corse".
+const pl=(n,uno,molti)=>n+' '+(n===1?uno:molti);
+// Rende sicuro un testo da inserire nell'HTML (nomi delle stazioni dal feed).
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch])); }
+// Data → "17 set 26". Una data senza orario ("2026-09-17") va letta nel fuso del
+// telefono: new Date() la prenderebbe come mezzanotte UTC, e a ovest di Greenwich
+// diventerebbe il giorno prima.
+function fmtDate(iso){
+  const g=/^(\d{4})-(\d\d)-(\d\d)$/.exec(iso);
+  const d=g?new Date(+g[1],+g[2]-1,+g[3]):new Date(iso);
+  return d.toLocaleDateString('it-IT',{day:'numeric',month:'short',year:'2-digit'});
+}
+// Avviso temporaneo in basso.
+let tT;
+function toast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('on');
+  // i messaggi lunghi restano di più: il tempo per leggerli cresce col testo
+  clearTimeout(tT); tT=setTimeout(()=>t.classList.remove('on'),Math.max(2200,msg.length*60));
+}
+</script>
+</body>
+</html>

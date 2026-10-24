@@ -1,0 +1,17 @@
+# ─── Dati personali BikeMi: non committare mai ───
+trips.json
+orders.json
+penalties.json
+subscriptions.json
+personal-information.json
+*.zip
+*.csv
+_tmp_*
+
+# ─── Sistema / editor ───
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
